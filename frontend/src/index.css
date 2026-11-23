@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============ 终端暗色主题（单一暗色模式） ============ */
+@layer base {
+  :root {
+    --background: 224 52% 4%;        /* #050810 */
+    --foreground: 214 41% 90%;       /* #dbe4f0 */
+    --card: 222 45% 9%;              /* #0c1220 */
+    --card-foreground: 214 41% 90%;
+    --panel: 219 43% 12%;            /* #111a2b */
+    --popover: 219 43% 12%;
+    --popover-foreground: 214 41% 90%;
+    --primary: 189 86% 53%;          /* #22d3ee 活体/交互 */
+    --primary-foreground: 224 52% 4%;
+    --secondary: 219 43% 12%;
+    --secondary-foreground: 214 41% 90%;
+    --muted: 219 30% 14%;
+    --muted-foreground: 221 20% 57%; /* #7c8aa8 */
+    --accent: 219 43% 16%;
+    --accent-foreground: 189 86% 53%;
+    --destructive: 0 91% 71%;        /* #f87171 */
+    --destructive-foreground: 224 52% 4%;
+    --border: 223 42% 18%;           /* #1a2540 发丝线 */
+    --input: 223 42% 18%;
+    --ring: 189 86% 53%;
+    --radius: 0.25rem;
+
+    /* 语义色：多/涨、空/跌、警告 */
+    --up: 158 64% 52%;               /* #34d399 */
+    --down: 0 91% 71%;               /* #f87171 */
+    --warn: 43 96% 56%;              /* #fbbf24 */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "JetBrains Mono", ui-monospace, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 扫描线覆层：极低透明度的终端质感 */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 60;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0 3px,
+      hsl(224 52% 2% / 0.25) 3px 4px
+    );
+    opacity: 0.35;
+  }
+
+  /* 细滚动条 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 0; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 0 3px hsl(var(--ring));
+  }
+}
+
+@layer components {
+  /* 大写宽字距的小节标签 */
+  .section-label {
+    @apply text-[10px] uppercase text-muted-foreground;
+    letter-spacing: 0.18em;
+  }
+
+  /* 状态灯：活体脉冲 */
+  .led {
+    @apply inline-block h-1.5 w-1.5 rounded-full;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .led-live {
+    @apply led text-primary bg-primary;
+    animation: led-pulse 1.5s ease-in-out infinite;
+  }
+  .led-off {
+    @apply led bg-muted-foreground/40 text-muted-foreground;
+    box-shadow: none;
+  }
+  .led-warn {
+    @apply led text-warn bg-warn;
+  }
+  .led-down {
+    @apply led text-down bg-down;
+  }
+
+  .panel {
+    @apply border border-border bg-card;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led-live { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
