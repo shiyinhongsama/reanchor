@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router";
-import { Activity, FlaskConical } from "lucide-react";
+import { Activity, FlaskConical, GitCompareArrows } from "lucide-react";
 import { api, type LiveStatus } from "@/lib/api";
 import BacktestPage from "@/pages/BacktestPage";
+import ComparePage from "@/pages/ComparePage";
 import ExecutorsPage from "@/pages/ExecutorsPage";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -61,6 +62,9 @@ function Header() {
         <NavLink to="/executors" className={tab}>
           <span className="inline-flex items-center gap-1.5"><Activity size={13} />执行器</span>
         </NavLink>
+        <NavLink to="/compare" className={tab}>
+          <span className="inline-flex items-center gap-1.5"><GitCompareArrows size={13} />对比</span>
+        </NavLink>
       </nav>
 
       <div className="ml-auto flex items-center gap-5 text-[11px] text-muted-foreground">
@@ -86,6 +90,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/backtest" replace />} />
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/executors" element={<ExecutorsPage />} />
+          <Route path="/compare" element={<ComparePage />} />
         </Routes>
       </main>
       <Toaster theme="dark" position="bottom-right" />

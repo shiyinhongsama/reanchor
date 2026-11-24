@@ -11,7 +11,9 @@ from ..core.config import get_settings
 from ..domain.sizing import SizingConfig
 from ..domain.strategy import StrategyParams
 from ..domain.timeframes import TIMEFRAMES
+from ..infrastructure.db import SessionLocal
 from ..infrastructure.exchange.ccxt_gate import CcxtGateAdapter
+from ..infrastructure.models import BacktestRunModel
 from ..schemas import BacktestRequest, SymbolMetrics
 from ..strategies.ema_pullback_v1 import EmaPullbackV1
 from .backtest_engine import BacktestEngine, CostModel
@@ -85,6 +87,37 @@ class BacktestRunner:
         except Exception as e:  # noqa: BLE001 - 任务失败需落错误信息
             self.jobs[job_id].update({"status": "failed", "error": str(e),
                                       "finished_at": datetime.now(timezone.utc)})
+        await self._persist(job_id, req)
+
+    async def _persist(self, job_id: str, req: BacktestRequest) -> None:
+        """任务结束（成功/失败）后存档到 backtest_runs 表，供对比页跨会话查询。"""
+        try:
+            job = self.jobs[job_id]
+            res = self.results.get(job_id, {})
+            equity = {}
+            for sym, data in res.items():
+                if sym == "summary":
+                    continue
+                eq = data.get("equity")
+                if eq is not None:
+                    equity[sym] = [[t.isoformat(), round(float(v), 2)] for t, v in eq.items()]
+            summary_json: dict = {}
+            summary = res.get("summary")
+            if summary:
+                summary_json = {
+                    "per_symbol": [m.model_dump() for m in summary["per_symbol"]],
+                    "portfolio": summary["portfolio"].model_dump() if summary["portfolio"] else None,
+                }
+            row = BacktestRunModel(
+                id=job_id, status=job["status"], error=job.get("error"),
+                strategy=req.strategy, symbols=req.symbols, timeframe=req.timeframe,
+                request=req.model_dump(mode="json"), summary=summary_json, equity=equity,
+                created_at=job["created_at"], finished_at=job.get("finished_at"))
+            async with SessionLocal() as session:
+                await session.merge(row)
+                await session.commit()
+        except Exception:  # noqa: BLE001 - 存档失败不影响任务本身的结果
+            pass
 
 
 runner = BacktestRunner()

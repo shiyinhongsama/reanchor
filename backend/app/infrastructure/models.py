@@ -59,6 +59,27 @@ class EquitySnapshotModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class BacktestRunModel(Base):
+    """回测运行存档：任务结束后落库，供对比页跨会话查询与叠加对比。
+
+    口径：只存请求、汇总指标与权益曲线（时间+净值，2 位舍入）；
+    逐笔交易明细体积大且对比页不需要，仅在内存任务表中保留（会话内可查）。
+    """
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)    # job_id
+    status: Mapped[str] = mapped_column(String(16))                  # done | failed
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    strategy: Mapped[str] = mapped_column(String(64))
+    symbols: Mapped[list] = mapped_column(JSON, default=list)
+    timeframe: Mapped[str] = mapped_column(String(8))
+    request: Mapped[dict] = mapped_column(JSON, default=dict)        # 完整请求（风险/费用/参数）
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)        # {per_symbol, portfolio}
+    equity: Mapped[dict] = mapped_column(JSON, default=dict)         # {symbol: [[iso_t, v], ...]}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SignalLogModel(Base):
     """执行器信号/动作流水：每次 bar 收盘触发后落一条（含错误与熔断事件）。"""
     __tablename__ = "signal_logs"

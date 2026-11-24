@@ -51,6 +51,21 @@ class BacktestResultResponse(BaseModel):
     # 净值曲线与交易明细通过 /backtests/{job_id}/equity、/trades 分页获取
 
 
+class BacktestRunSummary(BaseModel):
+    """回测存档列表项（对比页用）：headline 指标取组合（多品种）或首个品种。"""
+    job_id: str
+    status: str
+    strategy: str
+    symbols: list[str]
+    timeframe: str
+    params: dict
+    risk_frac: float
+    vol_target: float
+    max_leverage: float
+    created_at: datetime
+    metrics: SymbolMetrics | None = None
+
+
 class LiveOrderRequest(BaseModel):
     symbol: str
     side: str              # long | short | close

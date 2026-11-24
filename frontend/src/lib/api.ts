@@ -68,6 +68,20 @@ export interface BacktestResult {
 
 export interface EquityPoint { t: string; v: number }
 
+export interface BacktestRunSummary {
+  job_id: string;
+  status: string;
+  strategy: string;
+  symbols: string[];
+  timeframe: string;
+  params: Record<string, number>;
+  risk_frac: number;
+  vol_target: number;
+  max_leverage: number;
+  created_at: string;
+  metrics?: SymbolMetrics | null;
+}
+
 export interface Trade {
   symbol?: string;
   entry_time: string;
@@ -180,6 +194,11 @@ export const api = {
     req<{ points: EquityPoint[] }>(`/backtests/${id}/equity${symbol ? `?symbol=${symbol}` : ""}`),
   backtestTrades: (id: string, limit = 500) =>
     req<{ trades: Trade[] }>(`/backtests/${id}/trades?limit=${limit}`),
+  backtestRuns: (limit = 100) => req<BacktestRunSummary[]>(`/backtests?limit=${limit}`),
+  deleteBacktest: (id: string) =>
+    fetch(`${BASE}/backtests/${id}`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new Error(`${r.status}`);
+    }),
 
   executors: () => req<Executor[]>("/executors"),
   createExecutor: (body: ExecutorCreate) =>

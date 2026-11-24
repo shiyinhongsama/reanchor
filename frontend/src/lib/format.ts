@@ -27,7 +27,9 @@ export function px(v: number | null | undefined): string {
 /** ISO -> "MM-DD HH:mm"（UTC 原始展示，与后端口径一致） */
 export function ts(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  // 后端经 SQLite 回源的时间可能不带时区后缀，平台口径一律按 UTC 解释
+  const hasTz = iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasTz ? iso : iso + "Z");
   if (Number.isNaN(d.getTime())) return iso;
   const p = (x: number) => String(x).padStart(2, "0");
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
