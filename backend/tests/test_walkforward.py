@@ -80,6 +80,16 @@ async def main():
     assert wf2["status"] == "done", wf2.get("error")
     assert all(f["params"]["slope_k"] == 8 for f in wf2["result"]["folds"])
 
+    # OOS 拼接结果落存档：对比页可读（策略名带 ·WF 后缀）
+    from app.infrastructure.models import BacktestRunModel
+    async with Session() as s:
+        row = await s.get(BacktestRunModel, wf_id)
+        assert row is not None, "走步验证应持久化到回测存档表"
+        assert row.strategy == "ema_pullback_v1·WF"
+        assert row.summary["per_symbol"][0]["symbol"] == "TESTUSDT"
+        assert row.summary["per_symbol"][0]["annualized"] is not None
+        assert len(row.equity["TESTUSDT"]) > 100
+
     print("walkforward tests passed")
 
 

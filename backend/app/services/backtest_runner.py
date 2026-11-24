@@ -206,11 +206,36 @@ class BacktestRunner:
                            "oos_equity": [{"t": t.isoformat(), "v": round(float(v), 2)}
                                           for t, v in oos.items()],
                        }})
+            await self._persist_walkforward(wf_id, req)
         except Exception as e:  # noqa: BLE001 - 任务失败落错误信息
             import traceback
             wf.update({"status": "failed",
                        "error": f"{e}\n{traceback.format_exc(limit=3)}",
                        "finished_at": datetime.now(timezone.utc)})
+
+    async def _persist_walkforward(self, wf_id: str, req: WalkForwardRequest) -> None:
+        """走步验证 OOS 拼接结果存入回测存档表（策略名带 ·WF 后缀），
+        对比页可与单次回测曲线叠加。与单次回测同一套读取路径（equity/result/bars）。"""
+        try:
+            wf = self.wfs[wf_id]
+            result = wf.get("result") or {}
+            oos = result.get("oos_metrics") or {}
+            if not oos:
+                return
+            summary_json = {"per_symbol": [{"symbol": req.symbol, **oos}],
+                            "portfolio": None}
+            row = BacktestRunModel(
+                id=wf_id, status="done", strategy=f"{req.strategy}·WF",
+                symbols=[req.symbol], timeframe=req.timeframe,
+                request={**req.model_dump(mode="json"), "symbols": [req.symbol]},
+                summary=summary_json,
+                equity={req.symbol: [[p["t"], p["v"]] for p in result["oos_equity"]]},
+                created_at=wf["created_at"], finished_at=wf.get("finished_at"))
+            async with SessionLocal() as session:
+                await session.merge(row)
+                await session.commit()
+        except Exception:  # noqa: BLE001 - 存档失败不影响内存态结果
+            pass
 
     async def _fetch_bars(self, req) -> dict[str, pd.DataFrame]:
         """按请求拉取全部品种 K 线（原生周期直拉；非原生周期由适配层重采样）。"""
