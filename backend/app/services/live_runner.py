@@ -20,7 +20,7 @@ from ..core.config import get_settings
 from ..domain.sizing import ReanchorStop
 from ..domain.timeframes import timeframe_ms
 from ..infrastructure.db import SessionLocal
-from ..infrastructure.models import ExecutorModel, SignalLogModel
+from ..infrastructure.models import EquitySnapshotModel, ExecutorModel, SignalLogModel
 from . import executor_service as svc
 
 log = logging.getLogger("live_runner")
@@ -75,11 +75,19 @@ async def tick(executor_id: str) -> dict | None:
                                   settings.gate_sandbox)
         try:
             state = json.loads(json.dumps(m.state or {}))   # 深拷贝，原因同上
+            if "cash" not in state:                          # 账面钱包：首 tick 以预算初始化
+                state["cash"] = float(m.equity_budget)
+            cash = float(state["cash"])
+            fee_rate = float(settings.default_fee)
             pos = state.get("position")
             action = "hold"
 
             if pos and sig.exit_signal:                      # 斜率翻转 → 平仓
                 await adapter.place_order(m.symbol, "close", pos["qty"], dry_run=dry)
+                if sig.close and pos.get("entry_px"):
+                    fill = float(sig.close)
+                    cash += pos["qty"] * (fill - float(pos["entry_px"])) * int(pos["side"]) \
+                        - pos["qty"] * fill * fee_rate       # 已实现盈亏 − 平仓手续费
                 state["position"] = None
                 action = "close"
             elif not pos and sig.entry_signal:               # 空仓 + 信号 → 开仓 + 初始止损
@@ -87,8 +95,12 @@ async def tick(executor_id: str) -> dict | None:
                 await adapter.place_order(m.symbol, side_name, sig.suggested_qty, dry_run=dry)
                 if sig.suggested_stop:
                     await adapter.set_stop(m.symbol, sig.suggested_stop, dry_run=dry)
+                entry_px = float(sig.close) if sig.close else None
+                if entry_px:
+                    cash -= sig.suggested_qty * entry_px * fee_rate   # 开仓手续费
                 state["position"] = {
                     "side": sig.entry_signal, "qty": sig.suggested_qty,
+                    "entry_px": entry_px,
                     "entry_stop": sig.suggested_stop, "current_stop": sig.suggested_stop,
                     "entry_bar": sig.as_of.isoformat(),
                     "aligned_bars": 1,   # 入场信号本身要求斜率同向，与回测引擎对齐
@@ -111,8 +123,21 @@ async def tick(executor_id: str) -> dict | None:
                     action = "trail_stop"
 
             state["consecutive_failures"] = 0
+            state["cash"] = round(cash, 4)
+            # 盯市盈亏与权益快照（每 tick 一条，账面口径见 EquitySnapshotModel docstring）
+            pos_now = state.get("position")
+            unreal = 0.0
+            if pos_now and sig.close and pos_now.get("entry_px"):
+                unreal = pos_now["qty"] * (float(sig.close) - float(pos_now["entry_px"])) * int(pos_now["side"])
+            equity = cash + unreal
+            state["last_equity"] = round(equity, 2)
             m.state = json.loads(json.dumps(state))          # 强制 SQLAlchemy 感知变更 + 校验可序列化
             s.add(m)
+            s.add(EquitySnapshotModel(
+                executor_id=m.id, bar_time=sig.as_of,
+                equity=round(equity, 4), cash=round(cash, 4),
+                unrealized=round(unreal, 4),
+                close=float(sig.close) if sig.close else None))
             s.add(SignalLogModel(
                 executor_id=m.id, bar_time=sig.as_of, action=action,
                 entry_signal=sig.entry_signal, exit_signal=sig.exit_signal,

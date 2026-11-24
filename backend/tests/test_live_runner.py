@@ -10,10 +10,11 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.infrastructure.exchange.ccxt_gate as gate_mod
-from app.infrastructure.models import Base
+from app.infrastructure.models import Base, EquitySnapshotModel
 from app.schemas import ExecutorCreate, ExecutorSignal
 from app.services import executor_service as svc
 from app.services import live_runner as lr
+from sqlalchemy import select
 
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 engine = create_async_engine(f"sqlite+aiosqlite:///{_tmp.name}")
@@ -68,7 +69,7 @@ async def _tick_state_machine():
         eid = m.id
         await svc.update_executor(s, eid, _upd_running())
 
-    # 1) 空仓 + 多头信号 → open，挂初始止损
+    # 1) 空仓 + 多头信号 → open，挂初始止损 + 记账（开仓手续费）
     orig = svc.compute_signal
     svc.compute_signal = lambda s, eid: _async(_sig(entry_signal=1, suggested_qty=0.5,
                                                     suggested_stop=99.0))
@@ -79,8 +80,14 @@ async def _tick_state_machine():
             m = await svc.get_executor(s, eid)
             pos = m.state["position"]
             assert pos["side"] == 1 and pos["current_stop"] == 99.0
+            assert pos["entry_px"] == 105.0
             logs = await svc.list_signals(s, eid)
             assert logs[0]["action"] == "open"
+            # 记账：cash = 1000 − 0.5×105×0.0005 = 999.97375，浮盈 0
+            assert abs(m.state["cash"] - 999.97375) < 1e-3
+            assert abs(m.state["last_equity"] - 999.97) < 0.01
+            snaps = await svc.list_equity(s, eid)
+            assert len(snaps) == 1 and abs(snaps[0]["equity"] - 999.97375) < 1e-3
         assert ("order", "BTCUSDT", "long", 0.5, True) in FakeAdapter.calls
 
         # 2) 持仓 + 斜率同向 → 重锚止损（105 - 3×2 = 99，等于初始 → hold；抬高 close 再试）
@@ -90,14 +97,23 @@ async def _tick_state_machine():
         async with Session() as s:
             m = await svc.get_executor(s, eid)
             assert m.state["position"]["current_stop"] == 104.0     # 110 - 3×2
+            # 浮盈 = 0.5×(110−105) = 2.5 → equity = 999.97375 + 2.5
+            assert abs(m.state["last_equity"] - 1002.47) < 0.01
+            snaps = await svc.list_equity(s, eid)
+            assert len(snaps) == 2 and abs(snaps[-1]["unrealized"] - 2.5) < 1e-3
 
-        # 3) 斜率翻转 → close，清仓
+        # 3) 斜率翻转 → close，清仓 + 已实现盈亏（0.5×(105−105)=0，扣平仓费）
         svc.compute_signal = lambda s, eid: _async(_sig(exit_signal=True, slope=-0.5))
         r = await lr.tick(eid)
         assert r["action"] == "close", r
         async with Session() as s:
             m = await svc.get_executor(s, eid)
             assert m.state["position"] is None
+            # cash = 999.97375 − 0.5×105×0.0005 = 999.9475（双边手续费后的净额）
+            assert abs(m.state["cash"] - 999.9475) < 1e-3
+            assert abs(m.state["last_equity"] - 999.95) < 0.01
+            snaps = await svc.list_equity(s, eid)
+            assert len(snaps) == 3 and abs(snaps[-1]["unrealized"]) < 1e-3
 
         # 4) 连续 3 次异常 → 熔断暂停
         async def _boom(s, eid): raise RuntimeError("network down")

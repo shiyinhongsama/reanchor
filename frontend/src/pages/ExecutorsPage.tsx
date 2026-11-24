@@ -6,6 +6,7 @@ import {
   type Executor, type ExecutorSignal, type SchedulerJob, type SignalLog, type StrategyInfo,
 } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
+import EquityChart from "@/components/EquityChart";
 import Metric from "@/components/Metric";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,6 +155,7 @@ export default function ExecutorsPage() {
   const [current, setCurrent] = useState<Executor | null>(null);
   const [signal, setSignal] = useState<ExecutorSignal | null>(null);
   const [logs, setLogs] = useState<SignalLog[]>([]);
+  const [equityPts, setEquityPts] = useState<{ t: string; equity: number; cash: number; unrealized: number }[]>([]);
   const [signalBusy, setSignalBusy] = useState(false);
 
   const reload = useCallback(async () => {
@@ -180,6 +182,10 @@ export default function ExecutorsPage() {
       const lg = await api.executorSignals(ex.id);
       setLogs(lg.signals);
     } catch { setLogs([]); }
+    try {
+      const eq = await api.executorEquity(ex.id);
+      setEquityPts(eq.points);
+    } catch { setEquityPts([]); }
   };
 
   const toggle = async (ex: Executor) => {
@@ -234,6 +240,7 @@ export default function ExecutorsPage() {
                 <TableHead className="text-[10px]">周期</TableHead>
                 <TableHead className="text-[10px] text-right">风险</TableHead>
                 <TableHead className="text-[10px] text-right">预算</TableHead>
+                <TableHead className="text-[10px] text-right">账面权益</TableHead>
                 <TableHead className="text-[10px]">持仓</TableHead>
                 <TableHead className="text-[10px]">下次触发</TableHead>
                 <TableHead className="text-[10px] text-right">操作</TableHead>
@@ -256,6 +263,17 @@ export default function ExecutorsPage() {
                     <TableCell className="py-2 text-[11px] text-muted-foreground">{ex.timeframe}</TableCell>
                     <TableCell className="num py-2 text-right text-[11px]">{pct(ex.risk_frac, 1).replace("+", "")}</TableCell>
                     <TableCell className="num py-2 text-right text-[11px]">{num(ex.equity_budget, 0)}</TableCell>
+                    <TableCell className="num py-2 text-right text-[11px]">
+                      {ex.state?.last_equity != null ? (() => {
+                        const pnlR = ex.state.last_equity! / ex.equity_budget - 1;
+                        return (
+                          <span className={pnlClass(pnlR)}>
+                            {num(ex.state.last_equity, 1)}
+                            <span className="ml-1 text-[10px] opacity-80">{pct(pnlR, 1)}</span>
+                          </span>
+                        );
+                      })() : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
                     <TableCell className="py-2 text-[11px]">
                       {pos ? (
                         <span className={pos.side > 0 ? "text-up" : "text-down"}>
@@ -333,6 +351,36 @@ export default function ExecutorsPage() {
                     <div className="mt-1 font-mono">{current.symbol} · {current.timeframe}</div></div>
                   <div className="border border-border p-2"><div className="section-label">风险/预算</div>
                     <div className="num mt-1">{pct(current.risk_frac, 1).replace("+", "")} · {num(current.equity_budget, 0)}U</div></div>
+                </div>
+
+                {/* 账面权益：dry-run 记账曲线 */}
+                <div>
+                  <div className="section-label mb-2">账面权益（DRY-RUN）</div>
+                  {equityPts.length > 0 ? (() => {
+                    const latest = equityPts[equityPts.length - 1];
+                    const pnl = latest.equity - current.equity_budget;
+                    return (
+                      <>
+                        <div className="mb-2 grid grid-cols-3 gap-2">
+                          <Metric label="账面权益" value={`${num(latest.equity, 2)}U`} />
+                          <Metric label="累计盈亏" value={`${pnl >= 0 ? "+" : ""}${num(pnl, 2)}U`}
+                            tone={pnl > 0 ? "up" : pnl < 0 ? "down" : "plain"} />
+                          <Metric label="持仓浮盈" value={`${latest.unrealized >= 0 ? "+" : ""}${num(latest.unrealized, 2)}U`}
+                            tone={latest.unrealized > 0 ? "up" : latest.unrealized < 0 ? "down" : "plain"} />
+                        </div>
+                        <div className="border border-border p-1">
+                          <EquityChart
+                            series={[{ name: "equity", color: "#22d3ee", width: 2,
+                              points: equityPts.map((p) => ({ t: p.t, v: p.equity })) }]}
+                            height={170} />
+                        </div>
+                      </>
+                    );
+                  })() : (
+                    <div className="flex h-20 items-center justify-center border border-dashed border-border text-[11px] text-muted-foreground">
+                      暂无记账（启动后每根 bar 收盘落一条快照）
+                    </div>
+                  )}
                 </div>
 
                 {current.state?.position && (

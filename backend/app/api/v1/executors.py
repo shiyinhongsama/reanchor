@@ -64,6 +64,13 @@ async def executor_signals(executor_id: str, limit: int = Query(100, le=500),
     return {"signals": await svc.list_signals(session, executor_id, limit)}
 
 
+@router.get("/{executor_id}/equity")
+async def executor_equity(executor_id: str, limit: int = Query(2000, le=10000),
+                          session: AsyncSession = Depends(get_session)):
+    """执行器账面权益曲线（每 tick 一条快照：equity = cash + 未实现盈亏）。"""
+    return {"points": await svc.list_equity(session, executor_id, limit)}
+
+
 @router.get("/{executor_id}/signal", response_model=ExecutorSignal)
 async def executor_signal(executor_id: str, session: AsyncSession = Depends(get_session)):
     """dry-run 信号快照：该执行器在下一根 bar 开盘应采取的动作。"""

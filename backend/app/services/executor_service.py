@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import get_settings
-from ..domain.sizing import SizingConfig, position_size
+from ..domain.sizing import SizingConfig, position_size, vt_scalar
 from ..domain.strategy import StrategyParams
 from ..domain.timeframes import TIMEFRAMES, timeframe_ms
 from ..infrastructure.models import ExecutorModel
@@ -112,6 +112,21 @@ async def delete_executor(session: AsyncSession, executor_id: str) -> ExecutorMo
     return _to_dict(m)
 
 
+async def list_equity(session: AsyncSession, executor_id: str, limit: int = 2000) -> list[dict]:
+    """执行器权益快照时间序列（升序），供前端绘制净值曲线。"""
+    from ..infrastructure.models import EquitySnapshotModel
+    rows = await session.scalars(
+        select(EquitySnapshotModel).where(EquitySnapshotModel.executor_id == executor_id)
+        .order_by(EquitySnapshotModel.id.desc()).limit(limit))
+    out = []
+    for r in reversed(list(rows)):
+        out.append({
+            "t": (r.bar_time or r.created_at).isoformat(),
+            "equity": r.equity, "cash": r.cash, "unrealized": r.unrealized, "close": r.close,
+        })
+    return out
+
+
 async def list_signals(session: AsyncSession, executor_id: str, limit: int = 100) -> list[dict]:
     from ..infrastructure.models import SignalLogModel
     rows = await session.scalars(
@@ -130,7 +145,7 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
     """dry-run 信号快照：基于最近一根已收盘 K 线，计算下一根开盘应采取的动作。
 
     防前视纪律：丢弃进行中的最后一根 bar，信号只读已收盘数据。
-    VT 缩放一期取 1.0（执行器尚无权益历史），与研究口径的差异在 note 中说明。
+    定仓基数为账面权益（现金+浮盈），VT 缩放来自最近权益快照的滚动波动率。
     """
     from ..infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 
@@ -177,11 +192,29 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
     close = float(row.close)
     atr_mult = params.get("atr_mult", 3.0)
 
+    # 定仓基数：账面权益（现金 + 持仓浮盈），与回测的复利口径一致；无记账历史时退回预算
+    st = m.state or {}
+    cash = float(st.get("cash", m.equity_budget))
+    unreal = 0.0
+    if pos and pos.get("entry_px"):
+        unreal = pos["qty"] * (close - float(pos["entry_px"])) * int(pos["side"])
+    equity_now = cash + unreal
+
+    cfg = SizingConfig(risk_frac=m.risk_frac, max_leverage=m.max_leverage,
+                       vol_target=m.vol_target, bars_per_year=bpy)
+    # VT 缩放：用最近权益快照的滚动波动率（不足 vol_lookback 条时 vt_scalar 内部回退 1.0）
+    from ..infrastructure.models import EquitySnapshotModel
+    snap_rows = await session.scalars(
+        select(EquitySnapshotModel.equity)
+        .where(EquitySnapshotModel.executor_id == m.id)
+        .order_by(EquitySnapshotModel.id.desc()).limit(cfg.vol_lookback + 1))
+    snaps = [float(v) for v in snap_rows][::-1] + [equity_now]
+    rets = [snaps[i] / snaps[i - 1] - 1 for i in range(1, len(snaps)) if snaps[i - 1] > 0]
+    scalar = vt_scalar(rets, cfg)
+
     qty, stop = 0.0, None
     if entry and atr:
-        cfg = SizingConfig(risk_frac=m.risk_frac, max_leverage=m.max_leverage,
-                           vol_target=m.vol_target, bars_per_year=bpy)
-        qty = position_size(m.equity_budget, close, atr_mult * atr, 1.0, cfg)
+        qty = position_size(equity_now, close, atr_mult * atr, scalar, cfg)
         stop = close - entry * atr_mult * atr
 
     return ExecutorSignal(
@@ -194,5 +227,5 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
         atr=round(atr, 2) if atr else None,
         slope=round(slope, 4) if slope else None,
         dry_run=True,
-        note="dry-run：VT 缩放取 1.0（执行器无权益历史）；信号基于最近已收盘 bar",
+        note=f"dry-run：按账面权益 {equity_now:.2f} 定仓，VT×{scalar:.2f}；信号基于最近已收盘 bar",
     )

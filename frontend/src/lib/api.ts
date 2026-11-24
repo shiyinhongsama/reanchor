@@ -95,7 +95,12 @@ export interface Executor {
   vol_target: number;
   max_leverage: number;
   status: "running" | "paused" | "stopped";
-  state: { position?: { side: number; qty: number; entry_stop: number; current_stop: number; entry_bar: string } | null; consecutive_failures?: number };
+  state: {
+    position?: { side: number; qty: number; entry_px?: number | null; entry_stop: number; current_stop: number; entry_bar: string; aligned_bars?: number } | null;
+    cash?: number;
+    last_equity?: number;
+    consecutive_failures?: number;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -184,6 +189,9 @@ export const api = {
   deleteExecutor: (id: string) =>
     req<Executor>(`/executors/${id}?confirm=true`, { method: "DELETE" }),
   executorSignal: (id: string) => req<ExecutorSignal>(`/executors/${id}/signal`),
+  executorEquity: (id: string, limit = 2000) =>
+    req<{ points: { t: string; equity: number; cash: number; unrealized: number; close: number | null }[] }>(
+      `/executors/${id}/equity?limit=${limit}`),
   executorSignals: (id: string, limit = 100) =>
     req<{ signals: SignalLog[] }>(`/executors/${id}/signals?limit=${limit}`),
 

@@ -39,6 +39,26 @@ class ExecutorModel(Base):
                                                  default=_utcnow, onupdate=_utcnow)
 
 
+class EquitySnapshotModel(Base):
+    """执行器权益快照：每次 tick 收盘后落一条（账面权益 = 钱包现金 + 未实现盈亏）。
+
+    记账口径（dry-run，账面隔离，见设计文档 §5）：
+    - 成交近似：信号 bar 收盘价成交（live 实际在收盘后数秒下单，偏差可忽略）；
+    - 手续费双边按 settings.default_fee 从现金扣减；
+    - 未计资金费与滑点（与研究成本模型独立，属监控口径）。
+    """
+    __tablename__ = "equity_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    executor_id: Mapped[str] = mapped_column(String(32), index=True)
+    bar_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    equity: Mapped[float] = mapped_column(Float)          # cash + 未实现盈亏
+    cash: Mapped[float] = mapped_column(Float)            # 钱包现金（含已实现盈亏与费用）
+    unrealized: Mapped[float] = mapped_column(Float, default=0.0)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class SignalLogModel(Base):
     """执行器信号/动作流水：每次 bar 收盘触发后落一条（含错误与熔断事件）。"""
     __tablename__ = "signal_logs"
