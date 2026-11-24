@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
-  api, TIMEFRAMES,
+  api, seenSignals, TIMEFRAMES,
   type Executor, type ExecutorSignal, type SchedulerJob, type SignalLog, type StrategyInfo,
 } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
@@ -157,30 +157,63 @@ export default function ExecutorsPage() {
   const [logs, setLogs] = useState<SignalLog[]>([]);
   const [equityPts, setEquityPts] = useState<{ t: string; equity: number; cash: number; unrealized: number }[]>([]);
   const [signalBusy, setSignalBusy] = useState(false);
+  const [, setSeenTick] = useState(0);
+  // 抽屉打开时的已读水位：流水里 id 大于它的行视为"新信号"高亮
+  const seenAtOpen = useRef<Record<string, number>>({});
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (silent = false) => {
     try {
       const [ex, sc] = await Promise.all([api.executors(), api.scheduler()]);
       setExecutors(ex);
       setJobs(sc.jobs);
+      // 抽屉开着时同步最新状态（持仓/权益/状态机），不打断用户查看
+      setCurrent((cur) => (cur ? ex.find((e) => e.id === cur.id) ?? cur : cur));
     } catch {
-      toast.error("无法连接后端");
+      if (!silent) toast.error("无法连接后端");
     }
   }, []);
 
   useEffect(() => {
     reload();
     api.strategies().then((r) => setStrategies(r.strategies)).catch(() => {});
-    const id = setInterval(reload, 15_000);
+    const id = setInterval(() => reload(true), 5_000);   // 列表 5s 静默轮询
     return () => clearInterval(id);
   }, [reload]);
 
+  const markSeen = (executorId: string, signals: SignalLog[]) => {
+    const maxId = Math.max(0, ...signals.map((s) => s.id));
+    if (maxId) {
+      seenSignals.mark(executorId, maxId);
+      setSeenTick((t) => t + 1);
+    }
+  };
+
+  // 抽屉打开期间：流水与权益 5s 轮询；看流水即视为已读
+  useEffect(() => {
+    if (!current) return;
+    const id = setInterval(async () => {
+      try {
+        const lg = await api.executorSignals(current.id);
+        setLogs(lg.signals);
+        markSeen(current.id, lg.signals);
+      } catch { /* 静默，下一拍重试 */ }
+      try {
+        const eq = await api.executorEquity(current.id);
+        setEquityPts(eq.points);
+      } catch { /* 静默 */ }
+    }, 5_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
+
   const openDetail = async (ex: Executor) => {
+    seenAtOpen.current[ex.id] = seenSignals.get()[ex.id] ?? 0;
     setCurrent(ex);
     setSignal(null);
     try {
       const lg = await api.executorSignals(ex.id);
       setLogs(lg.signals);
+      markSeen(ex.id, lg.signals);
     } catch { setLogs([]); }
     try {
       const eq = await api.executorEquity(ex.id);
@@ -218,10 +251,10 @@ export default function ExecutorsPage() {
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <span className="section-label">EXECUTORS / 执行器（{executors.length}）</span>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={reload}>
+          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => reload()}>
             <RefreshCw size={12} className="mr-1" />刷新
           </Button>
-          <CreateExecutorDialog strategies={strategies} onCreated={reload} />
+          <CreateExecutorDialog strategies={strategies} onCreated={() => reload()} />
         </div>
       </div>
 
@@ -250,6 +283,11 @@ export default function ExecutorsPage() {
               {executors.map((ex) => {
                 const st = STATUS_LED[ex.status] ?? STATUS_LED.paused;
                 const pos = ex.state?.position;
+                const unread = ex.latest_signal != null
+                  && ex.latest_signal.id > (seenSignals.get()[ex.id] ?? 0);
+                const latestAction = ex.latest_signal
+                  ? (ACTION_LABEL[ex.latest_signal.action]?.label ?? ex.latest_signal.action)
+                  : null;
                 return (
                   <TableRow key={ex.id} className="cursor-pointer border-border/60 transition-colors hover:bg-panel"
                     onClick={() => openDetail(ex)}>
@@ -258,7 +296,16 @@ export default function ExecutorsPage() {
                         <span className={st.cls} />{st.label}
                       </span>
                     </TableCell>
-                    <TableCell className="py-2 text-[11px] font-medium">{ex.name}</TableCell>
+                    <TableCell className="py-2 text-[11px] font-medium">
+                      {ex.name}
+                      {unread && (
+                        <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-primary"
+                              title={`新信号：${latestAction}`}>
+                          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                          {latestAction}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="py-2 font-mono text-[11px]">{ex.symbol}</TableCell>
                     <TableCell className="py-2 text-[11px] text-muted-foreground">{ex.timeframe}</TableCell>
                     <TableCell className="num py-2 text-right text-[11px]">{pct(ex.risk_frac, 1).replace("+", "")}</TableCell>
@@ -440,9 +487,14 @@ export default function ExecutorsPage() {
                       <TableBody>
                         {logs.map((lg) => {
                           const a = ACTION_LABEL[lg.action] ?? { label: lg.action, cls: "text-muted-foreground" };
+                          const isNew = lg.id > (seenAtOpen.current[current.id] ?? 0);
                           return (
-                            <TableRow key={lg.id} className="border-border/60 hover:bg-panel">
-                              <TableCell className="num py-1.5 text-[11px] text-muted-foreground">{ts(lg.bar_time ?? lg.created_at)}</TableCell>
+                            <TableRow key={lg.id}
+                              className={`border-border/60 hover:bg-panel ${isNew ? "bg-primary/5" : ""}`}>
+                              <TableCell className="num py-1.5 text-[11px] text-muted-foreground">
+                                {isNew && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-primary" />}
+                                {ts(lg.bar_time ?? lg.created_at)}
+                              </TableCell>
                               <TableCell className={`py-1.5 text-[11px] ${a.cls}`}>{a.label}</TableCell>
                               <TableCell className="num py-1.5 text-right text-[11px]">{px(lg.stop)}</TableCell>
                               <TableCell className={`num py-1.5 text-right text-[11px] ${pnlClass(lg.slope)}`}>{num(lg.slope, 1)}</TableCell>

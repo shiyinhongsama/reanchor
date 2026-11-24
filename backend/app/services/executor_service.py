@@ -78,6 +78,25 @@ async def list_executors(session: AsyncSession) -> list[ExecutorModel]:
     return list(rows)
 
 
+async def latest_signal_map(session: AsyncSession, executor_ids: list[str]) -> dict[str, dict]:
+    """每个执行器的最新一条信号（列表页未读高亮用）：两次查询，避免 N+1。"""
+    if not executor_ids:
+        return {}
+    from ..infrastructure.models import SignalLogModel
+    max_ids = await session.execute(
+        select(SignalLogModel.executor_id, func.max(SignalLogModel.id))
+        .where(SignalLogModel.executor_id.in_(executor_ids))
+        .group_by(SignalLogModel.executor_id))
+    pairs = {ex_id: max_id for ex_id, max_id in max_ids.all() if max_id is not None}
+    if not pairs:
+        return {}
+    rows = await session.scalars(
+        select(SignalLogModel).where(SignalLogModel.id.in_(pairs.values())))
+    return {r.executor_id: {"id": r.id, "action": r.action,
+                            "bar_time": r.bar_time.isoformat() if r.bar_time else None}
+            for r in rows}
+
+
 async def get_executor(session: AsyncSession, executor_id: str) -> ExecutorModel | None:
     return await session.get(ExecutorModel, executor_id)
 

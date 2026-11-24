@@ -9,6 +9,26 @@ export const auth = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+/** 信号已读标记：executor_id -> 已读的最大信号 id（本地存储，用于未读高亮）。 */
+const SEEN_KEY = "reanchor_seen_signals";
+export const seenSignals = {
+  get: (): Record<string, number> => {
+    try {
+      return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}");
+    } catch {
+      return {};
+    }
+  },
+  mark: (executorId: string, signalId: number) => {
+    const m = seenSignals.get();
+    const next = Math.max(m[executorId] ?? 0, signalId);
+    if (next !== m[executorId]) {
+      m[executorId] = next;
+      localStorage.setItem(SEEN_KEY, JSON.stringify(m));
+    }
+  },
+};
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = auth.token();
   const r = await fetch(`${BASE}${path}`, {
@@ -149,6 +169,7 @@ export interface Executor {
     last_equity?: number;
     consecutive_failures?: number;
   };
+  latest_signal?: { id: number; action: string; bar_time: string | null } | null;
   created_at: string;
   updated_at: string;
 }

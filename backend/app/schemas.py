@@ -150,6 +150,7 @@ class ExecutorOut(BaseModel):
     max_leverage: float
     status: str
     state: dict
+    latest_signal: dict | None = None   # {id, action, bar_time}，列表页未读高亮用
     created_at: datetime
     updated_at: datetime
 

@@ -20,7 +20,14 @@ async def create_executor(req: ExecutorCreate, session: AsyncSession = Depends(g
 
 @router.get("", response_model=list[ExecutorOut])
 async def list_executors(session: AsyncSession = Depends(get_session)):
-    return await svc.list_executors(session)
+    rows = await svc.list_executors(session)
+    signals = await svc.latest_signal_map(session, [r.id for r in rows])
+    out = []
+    for r in rows:
+        o = ExecutorOut.model_validate(r)
+        o.latest_signal = signals.get(r.id)
+        out.append(o)
+    return out
 
 
 @router.get("/{executor_id}", response_model=ExecutorOut)
