@@ -1,27 +1,43 @@
+# ReAnchor 一键部署（生产形态）：
+#   cp .env.example .env   # 修改密码与密钥
+#   docker compose up -d --build
+# 访问 http://localhost:8080 （开发模式见 docker-compose.dev.yml）
 services:
   backend:
     build: ./backend
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
     environment:
-      - TP_ENV=dev
-      - TP_LIVE_ENABLED=false        # 实盘总开关，默认关
-      - TP_GATE_SANDBOX=false
+      TP_ENV: prod
+      TP_DATABASE_URL: sqlite+aiosqlite:////data/trading.db
+      # 以下变量由根目录 .env 注入（compose 自动读取），未配置时用默认值
+      TP_ADMIN_PASSWORD: ${TP_ADMIN_PASSWORD:-reanchor}
+      TP_SECRET_KEY: ${TP_SECRET_KEY:-reanchor-dev-secret-change-me}
+      TP_TOKEN_TTL_HOURS: ${TP_TOKEN_TTL_HOURS:-168}
+      TP_LIVE_ENABLED: ${TP_LIVE_ENABLED:-false}
+      TP_GATE_API_KEY: ${TP_GATE_API_KEY:-}
+      TP_GATE_API_SECRET: ${TP_GATE_API_SECRET:-}
+      TP_GATE_SANDBOX: ${TP_GATE_SANDBOX:-false}
     volumes:
-      - ./backend:/app               # 开发期热挂载
-      - market-data:/data
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - reanchor-data:/data          # SQLite 与执行器状态持久化
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # 后端不直接暴露端口；调试时可打开：
+    # ports:
+    #   - "8000:8000"
 
   frontend:
-    image: node:20-alpine
-    working_dir: /web
+    build: ./frontend
+    restart: unless-stopped
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/web
-    command: sh -c "npm install && npm run dev -- --host"
+      - "8080:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
-  market-data:
+  reanchor-data:

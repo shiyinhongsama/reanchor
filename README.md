@@ -61,19 +61,35 @@ npm install
 npm run dev        # http://localhost:3000（/api 已代理到 8000）
 ```
 
-或使用 Docker Compose 整体启动：
+## 🐳 Docker 部署（推荐）
 
 ```bash
-docker-compose up  # 后端 :8000 / 前端 :5173
+cp .env.example .env    # 修改登录密码 TP_ADMIN_PASSWORD 与密钥 TP_SECRET_KEY
+docker compose up -d --build
+# 访问 http://localhost:8080
+```
+
+- 前端 nginx 托管静态产物并把 `/api` 反代到后端，单端口对外
+- SQLite 与执行器状态持久化在命名卷 `reanchor-data`，重建容器不丢数据
+- 默认全 dry-run；真实下单需同时配置 `TP_LIVE_ENABLED=true` 与 Gate API 凭证
+
+开发模式（源码热挂载 + Vite dev server）：
+
+```bash
+docker compose -f docker-compose.dev.yml up   # 后端 :8000 / 前端 :5173
 ```
 
 ## 🧪 测试与回测保真
 
 ```bash
 cd backend
-PYTHONPATH=. python tests/test_engine_smoke.py   # 引擎冒烟 + 研究基线锚定
-PYTHONPATH=. python tests/test_executors.py      # 执行器 CRUD / 状态机
-PYTHONPATH=. python tests/test_live_runner.py    # 实盘调度 / 熔断
+PYTHONPATH=. python tests/test_engine_smoke.py      # 引擎冒烟 + 研究基线锚定
+PYTHONPATH=. python tests/test_executors.py         # 执行器 CRUD / 状态机
+PYTHONPATH=. python tests/test_live_runner.py       # 实盘调度 / 熔断 / 记账
+PYTHONPATH=. python tests/test_sweep.py             # 参数扫描（网格展开 / 共享 K 线）
+PYTHONPATH=. python tests/test_backtest_persist.py  # 回测存档
+PYTHONPATH=. python tests/test_latest_signal.py     # 最新信号查询
+PYTHONPATH=. python tests/test_auth.py              # 登录令牌 / 中间件
 ```
 
 引擎结果**锚定研究基线**（BTC 日线，5% 风险 + VT 25%），防止移植漂移
