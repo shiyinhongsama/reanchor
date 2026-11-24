@@ -58,7 +58,7 @@ async def _crud():
         m = await svc.create_executor(s, ExecutorCreate(
             symbol="ETHUSDT", timeframe="1d", params={"slope_k": 5}, equity_budget=500))
         assert m.params == {"ema_n": 20, "slope_k": 5, "atr_n": 14, "atr_mult": 3.0,
-                        "reanchor_min_bars": 1}
+                        "reanchor_min_bars": 1, "ma_type": "ema"}
         assert m.status == "paused" and m.symbol == "ETHUSDT"
         eid = m.id
 
