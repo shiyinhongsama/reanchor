@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...core.config import get_settings
 from ...infrastructure.db import get_session
+from ...infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 from ...infrastructure.models import BacktestRunModel
 from ...schemas import (BacktestJob, BacktestRequest, BacktestResultResponse,
                         BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics)
@@ -144,6 +146,55 @@ async def get_equity(job_id: str, symbol: str = "__portfolio__",
     if not points:
         raise HTTPException(404, "equity not found")
     return {"points": [{"t": t, "v": v} for t, v in points]}
+
+
+@router.get("/{job_id}/bars")
+async def get_bars(job_id: str, symbol: str, limit: int = 1500,
+                   session: AsyncSession = Depends(get_session)):
+    """回测区间的 K 线（K 线图 + 买卖点标记用）。
+
+    按存档请求的品种/周期/区间重拉 Gate 公开行情；与引擎口径一致，
+    丢弃最后一根未收盘 bar。
+    """
+    row = await session.get(BacktestRunModel, job_id)
+    if not row:
+        raise HTTPException(404, "job not found")
+    req = row.request or {}
+    if symbol not in (req.get("symbols") or []):
+        raise HTTPException(404, f"symbol {symbol} not in this backtest")
+    import pandas as pd
+
+    def _ms(dt) -> int:
+        ts = pd.Timestamp(dt)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        return int(ts.timestamp() * 1000)
+
+    since = _ms(req.get("start") or "2023-01-01")
+    until = _ms(req["end"]) if req.get("end") else _ms(pd.Timestamp.now("UTC"))
+    settings = get_settings()
+    adapter = CcxtGateAdapter(settings.gate_api_key, settings.gate_api_secret,
+                              settings.gate_sandbox)
+    try:
+        bars = await adapter.klines(symbol, row.timeframe, since, until)
+    finally:
+        await adapter.close()
+    if not len(bars):
+        return {"bars": []}
+    # 丢弃未收盘 bar：最后 bar 的开盘时间 + 周期长度（按相邻间隔推断）超过当前即未收盘
+    if len(bars) > 1:
+        eff_ms = int((bars["open_time"].iloc[-1] - bars["open_time"].iloc[-2])
+                     .total_seconds() * 1000)
+        last_open_ms = int(bars["open_time"].iloc[-1].timestamp() * 1000)
+        if last_open_ms + eff_ms > int(pd.Timestamp.now("UTC").timestamp() * 1000):
+            bars = bars.iloc[:-1]
+    bars = bars.tail(min(limit, 5000))
+    out = [{
+        "t": row_.open_time.isoformat(),
+        "o": round(float(row_.open), 8), "h": round(float(row_.high), 8),
+        "l": round(float(row_.low), 8), "c": round(float(row_.close), 8),
+    } for row_ in bars.itertuples()]
+    return {"bars": out}
 
 
 @router.get("/{job_id}/trades")

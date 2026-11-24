@@ -5,6 +5,7 @@ import { Play, Square } from "lucide-react";
 import { api, TIMEFRAMES, type BacktestJob, type BacktestResult, type StrategyInfo, type Trade } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
 import EquityChart, { type EquitySeries } from "@/components/EquityChart";
+import CandleChart, { type Candle, type TradeMarker } from "@/components/CandleChart";
 import Metric from "@/components/Metric";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,9 @@ export default function BacktestPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [chartMode, setChartMode] = useState<"equity" | "kline">("equity");
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [klineBusy, setKlineBusy] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -145,6 +149,30 @@ export default function BacktestPage() {
   };
 
   const stratInfo = strategies.find((s) => s.name === form.strategy);
+
+  // K 线模式：组合视图取第一个品种；按选中品种拉 K 线并映射开平仓标记
+  const klineSymbol = !selected || selected === "__portfolio__"
+    ? result?.per_symbol[0]?.symbol
+    : selected;
+  useEffect(() => {
+    if (chartMode !== "kline" || !job || !klineSymbol) return;
+    setKlineBusy(true);
+    api.backtestBars(job.job_id, klineSymbol)
+      .then((r) => setCandles(r.bars))
+      .catch(() => { setCandles([]); toast.error("K 线加载失败"); })
+      .finally(() => setKlineBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartMode, job?.job_id, klineSymbol]);
+
+  const markers: TradeMarker[] = chartMode === "kline"
+    ? trades.filter((t) => t.symbol === klineSymbol).flatMap((t) => {
+        const side = t.side === "long" ? 1 as const : -1 as const;
+        return [
+          { t: t.entry_time, side, phase: "entry" as const, text: side > 0 ? "开多" : "开空" },
+          { t: t.exit_time, side, phase: "exit" as const, win: t.pnl > 0, text: "平" },
+        ];
+      })
+    : [];
 
   const currentMetrics = result
     ? selected === "__portfolio__"
@@ -273,21 +301,46 @@ export default function BacktestPage() {
         )}
       </aside>
 
-      {/* 中：资金曲线 + 交易明细 */}
+      {/* 中：资金曲线 / K线 + 交易明细 */}
       <section className="flex min-h-0 flex-col">
         <div className="border-b border-border px-4 py-2">
           <div className="flex items-center gap-4">
-            <span className="section-label">EQUITY / 资金曲线</span>
-            {series.map((s) => (
+            <span className="section-label">
+              {chartMode === "equity" ? "EQUITY / 资金曲线" : `KLINE / ${klineSymbol ?? ""}`}
+            </span>
+            {chartMode === "equity" && series.map((s) => (
               <span key={s.name} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                 <span className="inline-block h-0.5 w-4" style={{ background: s.color }} />
                 {s.name}
               </span>
             ))}
+            <div className="ml-auto flex gap-1">
+              {(["equity", "kline"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setChartMode(m)}
+                  className={`px-2.5 py-1 text-[10px] tracking-wider transition-colors ${
+                    chartMode === m
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {m === "equity" ? "资金曲线" : "K 线"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="p-2">
-          {series.length > 0 ? (
+          {chartMode === "kline" ? (
+            candles.length > 0 ? (
+              <CandleChart candles={candles} markers={markers} height={380} />
+            ) : (
+              <div className="flex h-[380px] items-center justify-center border border-dashed border-border text-xs text-muted-foreground">
+                {klineBusy ? "K 线加载中…" : result ? "K 线暂不可用" : "> 运行回测后切换到 K 线查看买卖点"}
+              </div>
+            )
+          ) : series.length > 0 ? (
             <EquityChart series={series} height={380} />
           ) : (
             <div className="flex h-[380px] items-center justify-center border border-dashed border-border text-xs text-muted-foreground">

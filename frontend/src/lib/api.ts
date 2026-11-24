@@ -255,6 +255,9 @@ export const api = {
     req<{ points: EquityPoint[] }>(`/backtests/${id}/equity${symbol ? `?symbol=${symbol}` : ""}`),
   backtestTrades: (id: string, limit = 500) =>
     req<{ trades: Trade[] }>(`/backtests/${id}/trades?limit=${limit}`),
+  backtestBars: (id: string, symbol: string, limit = 1500) =>
+    req<{ bars: { t: string; o: number; h: number; l: number; c: number }[] }>(
+      `/backtests/${id}/bars?symbol=${encodeURIComponent(symbol)}&limit=${limit}`),
   backtestRuns: (limit = 100) => req<BacktestRunSummary[]>(`/backtests?limit=${limit}`),
   deleteBacktest: (id: string) =>
     fetch(`${BASE}/backtests/${id}`, {
