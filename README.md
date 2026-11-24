@@ -32,6 +32,7 @@
 - **Dry-run 优先**：实盘默认全 dry-run，真实下单刻意保留 `NotImplementedError`，需要显式开关
 - **终端风工作台**：暗色主题、等宽数字、lightweight-charts 权益曲线、交易明细逐笔可查
 - **多交易所架构**：交易所适配器抽象层，一期接入 Gate.io（ccxt）
+- **单用户登录**：密码登录 + HMAC 签名令牌（无状态、7 天有效），`/api/v1` 全端点鉴权
 
 ## 🖥 界面
 
@@ -129,6 +130,9 @@ reanchor/
 | `TP_LIVE_ENABLED` | `false` | 实盘总开关；关闭时所有订单 dry-run |
 | `TP_GATE_API_KEY` / `TP_GATE_API_SECRET` | 空 | Gate.io API 凭证 |
 | `TP_GATE_SANDBOX` | `false` | 使用 Gate 测试网 |
+| `TP_ADMIN_PASSWORD` | `reanchor` | 登录密码（单用户模式，部署务必修改） |
+| `TP_SECRET_KEY` | 开发默认值 | 令牌签名密钥（修改后旧令牌全部失效） |
+| `TP_TOKEN_TTL_HOURS` | `168` | 登录令牌有效期（小时） |
 
 ## 🗺 Roadmap
 

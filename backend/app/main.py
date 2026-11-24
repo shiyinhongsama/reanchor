@@ -4,10 +4,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .core.auth import AuthMiddleware
 from .core.config import get_settings
 from .infrastructure.db import init_db
 from .services.live_runner import runner as live_runner
-from .api.v1 import backtests, executors, live
+from .api.v1 import auth, backtests, executors, live
 
 settings = get_settings()
 
@@ -31,6 +32,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AuthMiddleware)       # /api/v1 需 Bearer 令牌（登录接口除外）
+
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(backtests.router, prefix="/api/v1")
 app.include_router(executors.router, prefix="/api/v1")
 app.include_router(live.router, prefix="/api/v1")

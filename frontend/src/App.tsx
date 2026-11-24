@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router";
-import { Activity, FlaskConical, GitCompareArrows } from "lucide-react";
-import { api, type LiveStatus } from "@/lib/api";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
+import { Activity, FlaskConical, GitCompareArrows, LogOut } from "lucide-react";
+import { api, auth, type LiveStatus } from "@/lib/api";
 import BacktestPage from "@/pages/BacktestPage";
 import ComparePage from "@/pages/ComparePage";
 import ExecutorsPage from "@/pages/ExecutorsPage";
+import LoginPage from "@/pages/LoginPage";
 import { Toaster } from "@/components/ui/sonner";
 
 function useUtcClock() {
@@ -21,6 +22,12 @@ function Header() {
   const clock = useUtcClock();
   const [alive, setAlive] = useState<boolean | null>(null);
   const [live, setLive] = useState<LiveStatus | null>(null);
+  const navigate = useNavigate();
+
+  const logout = () => {
+    auth.clear();
+    navigate("/login", { replace: true });
+  };
 
   useEffect(() => {
     let stop = false;
@@ -76,12 +83,35 @@ function Header() {
           </span>
         )}
         <span className="num text-muted-foreground">{clock}</span>
+        <button
+          className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-down"
+          onClick={logout}
+          title="退出登录"
+        >
+          <LogOut size={13} />
+        </button>
       </div>
     </header>
   );
 }
 
 export default function App() {
+  const { pathname } = useLocation();
+
+  // 登录页独立全屏渲染，不带工作台框架
+  if (pathname === "/login") {
+    return (
+      <>
+        <LoginPage />
+        <Toaster theme="dark" position="bottom-right" />
+      </>
+    );
+  }
+  // 路由守卫：无令牌一律去登录
+  if (!auth.token()) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <Header />
@@ -91,6 +121,7 @@ export default function App() {
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/executors" element={<ExecutorsPage />} />
           <Route path="/compare" element={<ComparePage />} />
+          <Route path="*" element={<Navigate to="/backtest" replace />} />
         </Routes>
       </main>
       <Toaster theme="dark" position="bottom-right" />

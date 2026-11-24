@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     live_max_leverage: float = 3.0
     live_enabled: bool = False            # 实盘总开关，默认关闭
 
+    # 登录鉴权（单用户；生产部署务必改密码与密钥）
+    admin_password: str = "reanchor"
+    secret_key: str = "reanchor-dev-secret-change-me"
+    token_ttl_hours: int = 168            # 令牌有效期，默认 7 天
+
 
 @lru_cache
 def get_settings() -> Settings:

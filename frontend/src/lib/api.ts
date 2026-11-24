@@ -1,12 +1,27 @@
 /** API 客户端：所有后端调用的唯一入口。 */
 
 const BASE = "/api/v1";
+const TOKEN_KEY = "reanchor_token";
+
+export const auth = {
+  token: () => localStorage.getItem(TOKEN_KEY),
+  set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
+  clear: () => localStorage.removeItem(TOKEN_KEY),
+};
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = auth.token();
   const r = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...init,
   });
+  if (r.status === 401 && !path.startsWith("/auth/login")) {
+    auth.clear();
+    if (window.location.pathname !== "/login") window.location.href = "/login";
+  }
   if (!r.ok) {
     let detail = `${r.status}`;
     try {
@@ -205,6 +220,12 @@ export const api = {
   },
   strategies: () => req<{ strategies: StrategyInfo[] }>("/strategies"),
 
+  login: (password: string) =>
+    req<{ token: string; expires_at: number }>("/auth/login", {
+      method: "POST", body: JSON.stringify({ password }),
+    }),
+  me: () => req<{ ok: boolean }>("/auth/me"),
+
   createBacktest: (body: BacktestRequest) =>
     req<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(body) }),
   backtest: (id: string) => req<BacktestJob>(`/backtests/${id}`),
@@ -215,7 +236,11 @@ export const api = {
     req<{ trades: Trade[] }>(`/backtests/${id}/trades?limit=${limit}`),
   backtestRuns: (limit = 100) => req<BacktestRunSummary[]>(`/backtests?limit=${limit}`),
   deleteBacktest: (id: string) =>
-    fetch(`${BASE}/backtests/${id}`, { method: "DELETE" }).then((r) => {
+    fetch(`${BASE}/backtests/${id}`, {
+      method: "DELETE",
+      headers: auth.token() ? { Authorization: `Bearer ${auth.token()}` } : {},
+    }).then((r) => {
+      if (r.status === 401) { auth.clear(); window.location.href = "/login"; }
       if (!r.ok) throw new Error(`${r.status}`);
     }),
   createSweep: (body: SweepRequest) =>
