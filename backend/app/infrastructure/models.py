@@ -80,6 +80,24 @@ class BacktestRunModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class BarsCacheModel(Base):
+    """K 线本地缓存：已收盘 bar 落库，回测/扫描/信号/图表共用，避免重复拉取。
+
+    纪律：只缓存「已收盘」的 bar（open_time + 周期 <= 入库时刻）；
+    进行中的 bar 永不入库，防前视口径与引擎一致。
+    """
+    __tablename__ = "bars_cache"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    timeframe: Mapped[str] = mapped_column(String(8), primary_key=True)
+    open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+
+
 class SignalLogModel(Base):
     """执行器信号/动作流水：每次 bar 收盘触发后落一条（含错误与熔断事件）。"""
     __tablename__ = "signal_logs"

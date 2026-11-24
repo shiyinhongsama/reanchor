@@ -17,8 +17,10 @@ from ..core.config import get_settings
 from ..domain.sizing import SizingConfig, position_size, vt_scalar
 from ..domain.strategy import StrategyParams
 from ..domain.timeframes import TIMEFRAMES, timeframe_ms
+from ..infrastructure.db import SessionLocal
 from ..infrastructure.models import ExecutorModel
 from ..schemas import ExecutorCreate, ExecutorSignal, ExecutorUpdate
+from . import bars_service
 from .backtest_runner import STRATEGIES
 
 # 信号计算需要的预热 bar 数（覆盖 EMA200 + slope_k + ATR + 波动率回看）
@@ -189,7 +191,8 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
     adapter = CcxtGateAdapter(settings.gate_api_key, settings.gate_api_secret,
                               settings.gate_sandbox)
     try:
-        bars = await adapter.klines(m.symbol, m.timeframe, since_ms, now_ms)
+        bars = await bars_service.get_bars(SessionLocal, adapter, m.symbol,
+                                           m.timeframe, since_ms, now_ms)
     finally:
         await adapter.close()
 

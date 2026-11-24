@@ -53,6 +53,7 @@ async def _seed() -> str:
 def main():
     ex_id = asyncio.run(_seed())
     ex_api.CcxtGateAdapter = FakeAdapter
+    ex_api.SessionLocal = Session      # 缓存走测试库，隔离开发库
 
     app = FastAPI()
     app.include_router(ex_api.router, prefix="/api/v1")

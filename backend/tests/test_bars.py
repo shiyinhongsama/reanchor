@@ -56,6 +56,7 @@ async def _seed() -> str:
 def main():
     job_id = asyncio.run(_seed())
     bt.CcxtGateAdapter = FakeAdapter
+    bt.SessionLocal = Session          # 缓存走测试库，隔离开发库
 
     app = FastAPI()
     app.include_router(bt.router, prefix="/api/v1")

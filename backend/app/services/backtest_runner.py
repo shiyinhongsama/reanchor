@@ -23,6 +23,7 @@ from ..schemas import (BacktestRequest, SWEEP_MAX_COMBOS, SweepRequest,
                        SymbolMetrics)
 from ..strategies.ema_pullback_v1 import EmaPullbackV1
 from ..strategies.ema_trend_v1 import EmaTrendV1
+from . import bars_service
 from .backtest_engine import BacktestEngine, CostModel
 
 STRATEGIES = {"ema_pullback_v1": EmaPullbackV1, "ema_trend_v1": EmaTrendV1}
@@ -87,7 +88,8 @@ class BacktestRunner:
         try:
             bars = {}
             for symbol in req.symbols:
-                bars[symbol] = await adapter.klines(symbol, req.timeframe, since, until)
+                bars[symbol] = await bars_service.get_bars(
+                    SessionLocal, adapter, symbol, req.timeframe, since, until)
             return bars
         finally:
             await adapter.close()

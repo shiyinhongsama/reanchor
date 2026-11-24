@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import get_settings
 from ...domain.timeframes import timeframe_ms
-from ...infrastructure.db import get_session
+from ...infrastructure.db import SessionLocal, get_session
 from ...infrastructure.exchange.ccxt_gate import CcxtGateAdapter
+from ...services import bars_service
 from ...schemas import ExecutorCreate, ExecutorOut, ExecutorSignal, ExecutorUpdate
 from ...services import executor_service as svc
 from ...services.live_runner import runner as live_runner
@@ -93,7 +94,8 @@ async def executor_bars(executor_id: str, limit: int = Query(300, le=1000),
     adapter = CcxtGateAdapter(settings.gate_api_key, settings.gate_api_secret,
                               settings.gate_sandbox)
     try:
-        bars = await adapter.klines(m.symbol, m.timeframe, since_ms, now_ms)
+        bars = await bars_service.get_bars(SessionLocal, adapter, m.symbol,
+                                           m.timeframe, since_ms, now_ms)
     except Exception as e:
         raise HTTPException(502, f"交易所数据获取失败: {type(e).__name__}") from e
     finally:

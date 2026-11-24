@@ -98,6 +98,7 @@ async def _crud():
 async def _signal(eid):
     import app.infrastructure.exchange.ccxt_gate as gate_mod
     gate_mod.CcxtGateAdapter = FakeAdapter          # 调用点在使用时才 import，替换生效
+    svc.SessionLocal = Session                      # 缓存走测试库，隔离开发库
     try:
         async with Session() as s:
             m = await svc.get_executor(s, eid)

@@ -11,9 +11,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import get_settings
-from ...infrastructure.db import get_session
+from ...infrastructure.db import SessionLocal, get_session
 from ...infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 from ...infrastructure.models import BacktestRunModel
+from ...services import bars_service
 from ...schemas import (BacktestJob, BacktestRequest, BacktestResultResponse,
                         BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics)
 from ...services.backtest_runner import STRATEGIES, runner
@@ -176,7 +177,8 @@ async def get_bars(job_id: str, symbol: str, limit: int = 1500,
     adapter = CcxtGateAdapter(settings.gate_api_key, settings.gate_api_secret,
                               settings.gate_sandbox)
     try:
-        bars = await adapter.klines(symbol, row.timeframe, since, until)
+        bars = await bars_service.get_bars(SessionLocal, adapter, symbol,
+                                           row.timeframe, since, until)
     finally:
         await adapter.close()
     if not len(bars):
