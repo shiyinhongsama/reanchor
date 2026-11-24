@@ -129,6 +129,56 @@ export interface SweepRequest {
   param_grid: Record<string, number[]>;
 }
 
+export interface WalkForwardFold {
+  i: number;
+  train: [string, string];
+  test: [string, string];
+  params: Record<string, number | string>;
+  train_metrics: Partial<SymbolMetrics>;
+  test_metrics: Partial<SymbolMetrics>;
+}
+
+export interface WalkForwardResult {
+  criterion: string;
+  folds: WalkForwardFold[];
+  aggregate: {
+    profitable_folds: string;
+    mean_annualized?: number | null;
+    median_annualized?: number | null;
+    std_annualized?: number | null;
+    mean_sharpe?: number | null;
+    worst_drawdown?: number | null;
+  };
+  oos_metrics: Partial<SymbolMetrics>;
+  oos_equity: EquityPoint[];
+}
+
+export interface WalkForwardJob {
+  wf_id: string;
+  status: "running" | "done" | "failed";
+  error?: string;
+  done?: number;
+  result?: WalkForwardResult;
+}
+
+export interface WalkForwardRequest {
+  strategy: string;
+  symbol: string;
+  timeframe: string;
+  start?: string | null;
+  folds: number;
+  train_frac: number;
+  criterion: string;
+  params: Record<string, number | string>;
+  param_grid: Record<string, number[]>;
+  risk_frac: number;
+  vol_target: number;
+  max_leverage: number;
+  fee: number;
+  slippage: number;
+  initial_equity: number;
+}
+
 export interface SweepJob {
   sweep_id: string;
   status: "running" | "done";
@@ -284,6 +334,9 @@ export const api = {
   createSweep: (body: SweepRequest) =>
     req<SweepJob>("/backtests/sweep", { method: "POST", body: JSON.stringify(body) }),
   sweep: (id: string) => req<SweepJob>(`/backtests/sweeps/${id}`),
+  walkforward: (body: WalkForwardRequest) =>
+    req<{ wf_id: string }>("/backtests/walkforward", { method: "POST", body: JSON.stringify(body) }),
+  walkforwardStatus: (id: string) => req<WalkForwardJob>(`/backtests/walkforward/${id}`),
 
   executors: () => req<Executor[]>("/executors"),
   createExecutor: (body: ExecutorCreate) =>

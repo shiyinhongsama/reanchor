@@ -101,6 +101,32 @@ class SweepJob(BaseModel):
     created_at: datetime
 
 
+class WalkForwardRequest(BaseModel):
+    """走步验证（Walk-Forward）：区间切成 folds 个顺序窗口，每窗前 train_frac 为
+    训练段、其余为样本外测试段。
+
+    - param_grid 非空：每折在训练段内按 criterion 寻优，胜者跑进测试段；
+    - param_grid 为空：固定 params 只做样本外评估。
+    每个测试段都是「平地起跑」（独立预热，不继承训练段持仓）。
+    """
+    strategy: str = "ema_pullback_v1"
+    symbol: str = "BTCUSDT"
+    timeframe: str = Field(default="1d", pattern=_TF_PATTERN)
+    start: datetime | None = None
+    end: datetime | None = None
+    folds: int = Field(default=5, ge=2, le=10)
+    train_frac: float = Field(default=0.7, gt=0.3, lt=0.95)
+    criterion: str = Field(default="calmar", pattern="^(calmar|sharpe|annualized)$")
+    params: dict = Field(default_factory=dict)
+    param_grid: dict[str, list[float]] = Field(default_factory=dict)
+    risk_frac: float = Field(default=0.05, gt=0, le=0.5)
+    vol_target: float = Field(default=0.25, ge=0)
+    max_leverage: float = Field(default=3.0, gt=0, le=10)
+    fee: float = 0.0005
+    slippage: float = 0.0002
+    initial_equity: float = Field(default=10_000.0, gt=0)
+
+
 class LiveOrderRequest(BaseModel):
     symbol: str
     side: str              # long | short | close

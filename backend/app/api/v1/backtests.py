@@ -16,7 +16,8 @@ from ...infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 from ...infrastructure.models import BacktestRunModel
 from ...services import bars_service
 from ...schemas import (BacktestJob, BacktestRequest, BacktestResultResponse,
-                        BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics)
+                        BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics,
+                        WalkForwardRequest)
 from ...services.backtest_runner import STRATEGIES, runner
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -48,6 +49,27 @@ async def create_sweep(req: SweepRequest):
     sw = runner.sweeps[sweep_id]
     return SweepJob(sweep_id=sweep_id, status=sw["status"], total=total, done=0,
                     job_ids=[], created_at=sw["created_at"])
+
+
+@router.post("/walkforward", status_code=202)
+async def submit_walkforward(req: WalkForwardRequest):
+    """走步验证：区间切折 → 训练段寻优 → 样本外测试段评估。"""
+    if req.strategy not in STRATEGIES:
+        raise HTTPException(422, f"unknown strategy: {req.strategy}")
+    try:
+        wf_id = await runner.submit_walkforward(req)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"wf_id": wf_id}
+
+
+@router.get("/walkforward/{wf_id}")
+async def get_walkforward(wf_id: str):
+    """走步验证状态与结果（内存态，重启后失效）。"""
+    wf = runner.wfs.get(wf_id)
+    if not wf:
+        raise HTTPException(404, "walkforward not found（状态仅存内存）")
+    return {"wf_id": wf_id, **wf}
 
 
 @router.get("/sweeps/{sweep_id}", response_model=SweepJob)

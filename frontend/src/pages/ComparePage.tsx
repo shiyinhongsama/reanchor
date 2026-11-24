@@ -6,6 +6,7 @@ import { api, type BacktestRunSummary, type EquityPoint } from "@/lib/api";
 import { num, pct, pnlClass, ts } from "@/lib/format";
 import EquityChart, { type EquitySeries } from "@/components/EquityChart";
 import SweepPanel from "@/components/SweepPanel";
+import WalkForwardPanel from "@/components/WalkForwardPanel";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -131,6 +132,9 @@ export default function ComparePage() {
         setCurves({});
         refresh().then(() => setSelected(ids.slice(0, MAX_SELECTED)));
       }} />
+
+      {/* 走步验证：参数时间稳定性检验 */}
+      <WalkForwardPanel />
 
       {/* 叠加权益曲线 */}
       <div className="rounded-md border border-border bg-card p-3">
