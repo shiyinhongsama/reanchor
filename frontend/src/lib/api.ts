@@ -284,6 +284,9 @@ export const api = {
       `/executors/${id}/equity?limit=${limit}`),
   executorSignals: (id: string, limit = 100) =>
     req<{ signals: SignalLog[] }>(`/executors/${id}/signals?limit=${limit}`),
+  executorBars: (id: string, limit = 300) =>
+    req<{ bars: { t: string; o: number; h: number; l: number; c: number }[] }>(
+      `/executors/${id}/bars?limit=${limit}`),
 
   liveStatus: () => req<LiveStatus>("/live/status"),
   scheduler: () => req<{ jobs: SchedulerJob[] }>("/live/scheduler"),

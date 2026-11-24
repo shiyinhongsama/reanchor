@@ -12,7 +12,7 @@ export interface Candle { t: string; o: number; h: number; l: number; c: number 
 export interface TradeMarker {
   t: string;
   side: 1 | -1;              // 持仓方向：1 多 / -1 空
-  phase: "entry" | "exit";
+  phase: "entry" | "exit" | "trail";
   win?: boolean;             // exit 用：盈亏定色
   text: string;
 }
@@ -58,6 +58,17 @@ export default function CandleChart({ candles, markers, height = 420 }:
     })));
 
     createSeriesMarkers(series, markers.map((m) => {
+      if (m.phase === "trail") {
+        // 重锚止损：小方块，顺持仓方向挂边
+        return {
+          time: toTs(m.t),
+          position: (m.side > 0 ? "belowBar" : "aboveBar") as "aboveBar" | "belowBar",
+          shape: "square" as const,
+          color: "#22d3ee",
+          text: m.text,
+          size: 0.4,
+        };
+      }
       if (m.phase === "entry") {
         return m.side > 0
           ? { time: toTs(m.t), position: "belowBar" as const, shape: "arrowUp" as const, color: "#34d399", text: m.text, size: 1 }

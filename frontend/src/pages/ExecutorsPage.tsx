@@ -7,6 +7,7 @@ import {
 } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
 import EquityChart from "@/components/EquityChart";
+import CandleChart, { type Candle, type TradeMarker } from "@/components/CandleChart";
 import Metric from "@/components/Metric";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -156,6 +157,8 @@ export default function ExecutorsPage() {
   const [signal, setSignal] = useState<ExecutorSignal | null>(null);
   const [logs, setLogs] = useState<SignalLog[]>([]);
   const [equityPts, setEquityPts] = useState<{ t: string; equity: number; cash: number; unrealized: number }[]>([]);
+  const [bars, setBars] = useState<Candle[]>([]);
+  const [barsLoading, setBarsLoading] = useState(false);
   const [signalBusy, setSignalBusy] = useState(false);
   const [, setSeenTick] = useState(0);
   // 抽屉打开时的已读水位：流水里 id 大于它的行视为"新信号"高亮
@@ -188,10 +191,12 @@ export default function ExecutorsPage() {
     }
   };
 
-  // 抽屉打开期间：流水与权益 5s 轮询；看流水即视为已读
+  // 抽屉打开期间：流水与权益 5s 轮询；K 线 30s 一拍；看流水即视为已读
   useEffect(() => {
     if (!current) return;
+    let tick = 0;
     const id = setInterval(async () => {
+      tick += 1;
       try {
         const lg = await api.executorSignals(current.id);
         setLogs(lg.signals);
@@ -201,6 +206,12 @@ export default function ExecutorsPage() {
         const eq = await api.executorEquity(current.id);
         setEquityPts(eq.points);
       } catch { /* 静默 */ }
+      if (tick % 6 === 1) {
+        try {
+          const b = await api.executorBars(current.id);
+          setBars(b.bars);
+        } catch { /* 静默 */ }
+      }
     }, 5_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +221,7 @@ export default function ExecutorsPage() {
     seenAtOpen.current[ex.id] = seenSignals.get()[ex.id] ?? 0;
     setCurrent(ex);
     setSignal(null);
+    setBars([]);
     try {
       const lg = await api.executorSignals(ex.id);
       setLogs(lg.signals);
@@ -219,7 +231,38 @@ export default function ExecutorsPage() {
       const eq = await api.executorEquity(ex.id);
       setEquityPts(eq.points);
     } catch { setEquityPts([]); }
+    setBarsLoading(true);
+    try {
+      const b = await api.executorBars(ex.id);
+      setBars(b.bars);
+    } catch { /* 图表区显示空态 */ } finally {
+      setBarsLoading(false);
+    }
   };
+
+  // 信号流水 → K 线标记：开仓箭头 / 平仓圆点（配对开仓价定盈亏色）/ 重锚小方块
+  const markers: TradeMarker[] = (() => {
+    const chrono = [...logs].reverse();          // 流水是倒序，翻回时间正序配对
+    const out: TradeMarker[] = [];
+    let open: { side: 1 | -1; px: number | null } | null = null;
+    for (const lg of chrono) {
+      if (!lg.bar_time) continue;
+      const closePx = typeof lg.detail?.close === "number" ? lg.detail.close : null;
+      if (lg.action === "open" && lg.side) {
+        open = { side: lg.side > 0 ? 1 : -1, px: closePx };
+        out.push({ t: lg.bar_time, side: open.side, phase: "entry",
+                   text: open.side > 0 ? "开多" : "开空" });
+      } else if (lg.action === "close" && open) {
+        const win = open.px != null && closePx != null
+          ? (closePx - open.px) * open.side > 0 : undefined;
+        out.push({ t: lg.bar_time, side: open.side, phase: "exit", win, text: "平" });
+        open = null;
+      } else if (lg.action === "trail_stop" && lg.side) {
+        out.push({ t: lg.bar_time, side: lg.side > 0 ? 1 : -1, phase: "trail", text: "锚" });
+      }
+    }
+    return out;
+  })();
 
   const toggle = async (ex: Executor) => {
     const next = ex.status === "running" ? "paused" : "running";
@@ -383,7 +426,7 @@ export default function ExecutorsPage() {
 
       {/* 执行器详情抽屉 */}
       <Sheet open={!!current} onOpenChange={(o) => !o && setCurrent(null)}>
-        <SheetContent className="w-[440px] overflow-y-auto border-l border-border bg-card sm:max-w-[440px]">
+        <SheetContent className="w-[560px] overflow-y-auto border-l border-border bg-card sm:max-w-[560px]">
           {current && (
             <>
               <SheetHeader>
@@ -468,6 +511,25 @@ export default function ExecutorsPage() {
                   ) : (
                     <div className="flex h-20 items-center justify-center border border-dashed border-border text-[11px] text-muted-foreground">
                       点击"计算当前信号"获取实时快照
+                    </div>
+                  )}
+                </div>
+
+                {/* K 线 + 信号标记：开平仓/重锚位置对照 */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="section-label">K 线 · {current.symbol} {current.timeframe}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      ▲开多 ▼开空 ●平 ■重锚
+                    </span>
+                  </div>
+                  {bars.length > 0 ? (
+                    <div className="border border-border p-1">
+                      <CandleChart candles={bars} markers={markers} height={230} />
+                    </div>
+                  ) : (
+                    <div className="flex h-20 items-center justify-center border border-dashed border-border text-[11px] text-muted-foreground">
+                      {barsLoading ? "K 线加载中…" : "K 线暂不可用（交易所数据获取失败）"}
                     </div>
                   )}
                 </div>
