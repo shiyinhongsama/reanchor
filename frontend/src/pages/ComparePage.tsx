@@ -4,6 +4,7 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import { api, type BacktestRunSummary, type EquityPoint } from "@/lib/api";
 import { num, pct, pnlClass, ts } from "@/lib/format";
 import EquityChart, { type EquitySeries } from "@/components/EquityChart";
+import SweepPanel from "@/components/SweepPanel";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -122,6 +123,12 @@ export default function ComparePage() {
           </Button>
         </div>
       </div>
+
+      {/* 参数扫描：批量回测，结果自动进存档列表并选中前 4 组 */}
+      <SweepPanel onDone={(ids) => {
+        setCurves({});
+        refresh().then(() => setSelected(ids.slice(0, MAX_SELECTED)));
+      }} />
 
       {/* 叠加权益曲线 */}
       <div className="rounded-md border border-border bg-card p-3">

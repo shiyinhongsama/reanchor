@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...infrastructure.db import get_session
 from ...infrastructure.models import BacktestRunModel
 from ...schemas import (BacktestJob, BacktestRequest, BacktestResultResponse,
-                        BacktestRunSummary, SymbolMetrics)
-from ...services.backtest_runner import runner
+                        BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics)
+from ...services.backtest_runner import STRATEGIES, runner
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -23,6 +23,37 @@ router = APIRouter(prefix="/backtests", tags=["backtests"])
 async def create_backtest(req: BacktestRequest):
     job_id = await runner.submit(req)
     return BacktestJob(job_id=job_id, status="pending", created_at=datetime.now(timezone.utc))
+
+
+@router.post("/sweep", response_model=SweepJob, status_code=202)
+async def create_sweep(req: SweepRequest):
+    """参数扫描：网格展开为多次回测顺序执行，每组自动存档进对比页。"""
+    if req.strategy not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy: {req.strategy}")
+    schema = STRATEGIES[req.strategy].params_schema
+    for key, values in req.param_grid.items():
+        if key not in schema:
+            raise HTTPException(400, f"unknown param: {key}（可选：{', '.join(schema)}）")
+        lo, hi = schema[key].get("min"), schema[key].get("max")
+        bad = [v for v in values if (lo is not None and v < lo) or (hi is not None and v > hi)]
+        if bad:
+            raise HTTPException(400, f"param {key} 越界 {bad}（允许 {lo}~{hi}）")
+    try:
+        sweep_id, total = await runner.submit_sweep(req)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    sw = runner.sweeps[sweep_id]
+    return SweepJob(sweep_id=sweep_id, status=sw["status"], total=total, done=0,
+                    job_ids=[], created_at=sw["created_at"])
+
+
+@router.get("/sweeps/{sweep_id}", response_model=SweepJob)
+async def get_sweep(sweep_id: str):
+    sw = runner.sweeps.get(sweep_id)
+    if not sw:
+        raise HTTPException(404, "sweep not found（扫描状态仅存内存，重启后查存档列表即可）")
+    return SweepJob(sweep_id=sweep_id, status=sw["status"], total=sw["total"],
+                    done=sw["done"], job_ids=sw["job_ids"], created_at=sw["created_at"])
 
 
 @router.get("", response_model=list[BacktestRunSummary])

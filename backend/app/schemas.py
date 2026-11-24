@@ -66,6 +66,41 @@ class BacktestRunSummary(BaseModel):
     metrics: SymbolMetrics | None = None
 
 
+# ---------- 参数扫描 ----------
+
+SWEEP_MAX_COMBOS = 24
+
+
+class SweepRequest(BaseModel):
+    """参数扫描：基准配置 + 网格维度，笛卡尔积展开为多次回测（上限 SWEEP_MAX_COMBOS）。
+
+    每个网格维度给值列表；留空的维度取单值默认。策略参数网格 param_grid 的键
+    必须是该策略的合法参数名，值为候选列表。
+    """
+    strategy: str = "ema_pullback_v1"
+    symbols: list[str] = Field(default=["BTCUSDT"])
+    timeframe: str = Field(default="1d", pattern=_TF_PATTERN)
+    start: datetime | None = None
+    end: datetime | None = None
+    fee: float = 0.0005
+    slippage: float = 0.0002
+    initial_equity: float = Field(default=10_000.0, gt=0)
+    max_leverage: float = Field(default=3.0, gt=0, le=10)
+    # 网格维度（每个至少 1 个值）
+    risk_fracs: list[float] = Field(default=[0.05])
+    vol_targets: list[float] = Field(default=[0.25])
+    param_grid: dict[str, list[float]] = Field(default_factory=dict)
+
+
+class SweepJob(BaseModel):
+    sweep_id: str
+    status: str                     # running | done
+    total: int
+    done: int
+    job_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
 class LiveOrderRequest(BaseModel):
     symbol: str
     side: str              # long | short | close

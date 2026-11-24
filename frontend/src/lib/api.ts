@@ -82,6 +82,25 @@ export interface BacktestRunSummary {
   metrics?: SymbolMetrics | null;
 }
 
+export interface SweepRequest {
+  strategy: string;
+  symbols: string[];
+  timeframe: string;
+  start?: string | null;
+  risk_fracs: number[];
+  vol_targets: number[];
+  param_grid: Record<string, number[]>;
+}
+
+export interface SweepJob {
+  sweep_id: string;
+  status: "running" | "done";
+  total: number;
+  done: number;
+  job_ids: string[];
+  created_at: string;
+}
+
 export interface Trade {
   symbol?: string;
   entry_time: string;
@@ -199,6 +218,9 @@ export const api = {
     fetch(`${BASE}/backtests/${id}`, { method: "DELETE" }).then((r) => {
       if (!r.ok) throw new Error(`${r.status}`);
     }),
+  createSweep: (body: SweepRequest) =>
+    req<SweepJob>("/backtests/sweep", { method: "POST", body: JSON.stringify(body) }),
+  sweep: (id: string) => req<SweepJob>(`/backtests/sweeps/${id}`),
 
   executors: () => req<Executor[]>("/executors"),
   createExecutor: (body: ExecutorCreate) =>
