@@ -236,6 +236,12 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
         qty = position_size(equity_now, close, atr_mult * atr, scalar, cfg)
         stop = close - entry * atr_mult * atr
 
+    # 信号解释卡：策略逐项检查 + 持仓感知结论
+    explain = strat.explain(d, t, sp) if hasattr(strat, "explain") else {}
+    if pos:
+        explain["reason"] = ("斜率翻转，下一根开盘平仓" if exit_sig
+                             else "斜率同向，继续持有；止损随重锚跟踪")
+
     return ExecutorSignal(
         executor_id=m.id, symbol=m.symbol, timeframe=m.timeframe,
         as_of=bars["open_time"].iloc[-1].to_pydatetime(),
@@ -247,4 +253,5 @@ async def compute_signal(session: AsyncSession, executor_id: str) -> ExecutorSig
         slope=round(slope, 4) if slope else None,
         dry_run=True,
         note=f"dry-run：按账面权益 {equity_now:.2f} 定仓，VT×{scalar:.2f}；信号基于最近已收盘 bar",
+        explain=explain,
     )

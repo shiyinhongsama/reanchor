@@ -68,5 +68,54 @@ class EmaPullbackV1:
             return False
         return (pos_side > 0 and slope < 0) or (pos_side < 0 and slope > 0)
 
+    def explain(self, bars: pd.DataFrame, t: int, params: StrategyParams) -> dict:
+        """信号解释（信号解释卡用）：入场条件逐项检查 + 人类可读结论。
+
+        与 entry_signal 同一口径，只读 t-1 及之前的已收盘数据。
+        """
+        s = t - 1
+        if s < 1:
+            return {"reason": "数据不足"}
+        row, prev = bars.iloc[s], bars.iloc[s - 1]
+        if np.isnan(row.ema) or np.isnan(row.atr) or np.isnan(row.slope):
+            return {"reason": "指标预热中"}
+        ema, atr, slope = float(row.ema), float(row.atr), float(row.slope)
+        close = float(row.close)
+        dist_atr = (close - ema) / atr if atr else None
+        long_chk = {
+            "prev_above": bool(prev.close > prev.ema),   # 前收站上 EMA
+            "touched": bool(row.low <= row.ema),          # 当根回踩 EMA
+            "reclaimed": bool(row.close > row.ema),       # 收回 EMA 上方
+            "slope_ok": bool(slope > 0),                  # 斜率向上
+        }
+        short_chk = {
+            "prev_below": bool(prev.close < prev.ema),   # 前收跌破 EMA
+            "touched": bool(row.high >= row.ema),         # 当根反抽 EMA
+            "rejected": bool(row.close < row.ema),        # 压回 EMA 下方
+            "slope_ok": bool(slope < 0),                  # 斜率向下
+        }
+        out = {
+            "ema": round(ema, 2), "atr": round(atr, 2),
+            "slope": round(slope, 4), "close": round(close, 2),
+            "dist_atr": round(dist_atr, 2) if dist_atr is not None else None,
+            "long": long_chk, "short": short_chk,
+        }
+        if all(long_chk.values()):
+            out["reason"] = "多头入场成立：回踩 EMA 收回，斜率向上"
+        elif all(short_chk.values()):
+            out["reason"] = "空头入场成立：反抽 EMA 压回，斜率向下"
+        else:
+            # 沿斜率方向报告第一个未满足的条件
+            chk = long_chk if slope > 0 else short_chk
+            msgs = {
+                "prev_above": "前收未站上 EMA", "prev_below": "前收未跌破 EMA",
+                "touched": f"未触及 EMA（距 {dist_atr:+.1f} ATR）" if dist_atr is not None else "未触及 EMA",
+                "reclaimed": "回踩未收回 EMA 上方", "rejected": "反抽未压回 EMA 下方",
+                "slope_ok": "斜率方向不符",
+            }
+            fail = next(k for k in chk if not chk[k])
+            out["reason"] = f"未入场：{msgs[fail]}"
+        return out
+
     def on_bar(self, ctx: BarContext) -> None:  # noqa: ARG002 - 预留实盘钩子
         return None

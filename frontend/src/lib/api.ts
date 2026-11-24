@@ -186,6 +186,17 @@ export interface ExecutorCreate {
   max_leverage: number;
 }
 
+export interface SignalExplain {
+  ema?: number;
+  atr?: number;
+  slope?: number;
+  close?: number;
+  dist_atr?: number | null;
+  reason?: string;
+  long?: Record<string, boolean>;
+  short?: Record<string, boolean>;
+}
+
 export interface ExecutorSignal {
   executor_id: string;
   symbol: string;
@@ -201,6 +212,7 @@ export interface ExecutorSignal {
   slope?: number | null;
   dry_run: boolean;
   note: string;
+  explain?: SignalExplain;
 }
 
 export interface SignalLog {

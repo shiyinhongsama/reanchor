@@ -173,3 +173,4 @@ class ExecutorSignal(BaseModel):
     slope: float | None = None
     dry_run: bool = True
     note: str = ""
+    explain: dict = Field(default_factory=dict, description="信号解释：入场条件逐项检查 + 结论")

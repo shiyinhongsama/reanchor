@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   api, seenSignals, TIMEFRAMES,
-  type Executor, type ExecutorSignal, type SchedulerJob, type SignalLog, type StrategyInfo,
+  type Executor, type ExecutorSignal, type SchedulerJob, type SignalExplain, type SignalLog, type StrategyInfo,
 } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
 import EquityChart from "@/components/EquityChart";
@@ -32,6 +32,46 @@ const ACTION_LABEL: Record<string, { label: string; cls: string }> = {
   error: { label: "错误", cls: "text-warn" },
   circuit_break: { label: "熔断暂停", cls: "text-down" },
 };
+
+const CHK_LABEL: Record<string, string> = {
+  prev_above: "前收站上 EMA", prev_below: "前收跌破 EMA",
+  touched: "当根触及 EMA", reclaimed: "收回 EMA 上方", rejected: "压回 EMA 下方",
+  slope_ok: "斜率同向",
+};
+
+/** 信号解释卡：入场条件逐项 ✓/✗ + 人类可读结论。 */
+function ExplainCard({ explain }: { explain: SignalExplain }) {
+  const side = (title: string, chk?: Record<string, boolean>) => chk && (
+    <div>
+      <div className="section-label mb-1">{title}</div>
+      <div className="space-y-0.5">
+        {Object.entries(chk).map(([k, ok]) => (
+          <div key={k} className="flex items-center gap-1.5 text-[10px]">
+            {ok ? <Check size={11} className="shrink-0 text-up" />
+                : <X size={11} className="shrink-0 text-muted-foreground" />}
+            <span className={ok ? "" : "text-muted-foreground"}>{CHK_LABEL[k] ?? k}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <div className="col-span-2 border border-border bg-panel p-2.5">
+      {explain.reason && <div className="text-[11px] leading-relaxed">{explain.reason}</div>}
+      {(explain.long || explain.short) && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {side("多侧条件", explain.long)}
+          {side("空侧条件", explain.short)}
+        </div>
+      )}
+      {explain.dist_atr != null && (
+        <div className="num mt-2 text-[10px] text-muted-foreground">
+          EMA {px(explain.ema)} · 价格距 EMA {explain.dist_atr > 0 ? "+" : ""}{num(explain.dist_atr, 1)} ATR
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CreateExecutorDialog({ strategies, onCreated }: { strategies: StrategyInfo[]; onCreated: () => void }) {
   const [open, setOpen] = useState(false);
@@ -160,6 +200,7 @@ export default function ExecutorsPage() {
   const [bars, setBars] = useState<Candle[]>([]);
   const [barsLoading, setBarsLoading] = useState(false);
   const [signalBusy, setSignalBusy] = useState(false);
+  const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [, setSeenTick] = useState(0);
   // 抽屉打开时的已读水位：流水里 id 大于它的行视为"新信号"高亮
   const seenAtOpen = useRef<Record<string, number>>({});
@@ -504,6 +545,7 @@ export default function ExecutorsPage() {
                         <Metric label="建议数量" value={num(signal.suggested_qty, 4)} />
                         <Metric label="建议止损" value={px(signal.suggested_stop)} />
                       </>}
+                      {signal.explain && <ExplainCard explain={signal.explain} />}
                       <div className="col-span-2 text-[10px] text-muted-foreground">
                         基于 {ts(signal.as_of)} 已收盘 bar · {signal.note}
                       </div>
@@ -550,17 +592,43 @@ export default function ExecutorsPage() {
                         {logs.map((lg) => {
                           const a = ACTION_LABEL[lg.action] ?? { label: lg.action, cls: "text-muted-foreground" };
                           const isNew = lg.id > (seenAtOpen.current[current.id] ?? 0);
+                          const ex = lg.detail?.explain as SignalExplain | undefined;
+                          const err = typeof lg.detail?.error === "string" ? lg.detail.error : null;
+                          const expanded = expandedLog === lg.id;
                           return (
-                            <TableRow key={lg.id}
-                              className={`border-border/60 hover:bg-panel ${isNew ? "bg-primary/5" : ""}`}>
-                              <TableCell className="num py-1.5 text-[11px] text-muted-foreground">
-                                {isNew && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-primary" />}
-                                {ts(lg.bar_time ?? lg.created_at)}
-                              </TableCell>
-                              <TableCell className={`py-1.5 text-[11px] ${a.cls}`}>{a.label}</TableCell>
-                              <TableCell className="num py-1.5 text-right text-[11px]">{px(lg.stop)}</TableCell>
-                              <TableCell className={`num py-1.5 text-right text-[11px] ${pnlClass(lg.slope)}`}>{num(lg.slope, 1)}</TableCell>
-                            </TableRow>
+                            <Fragment key={lg.id}>
+                              <TableRow
+                                className={`cursor-pointer border-border/60 hover:bg-panel ${isNew ? "bg-primary/5" : ""}`}
+                                onClick={() => setExpandedLog(expanded ? null : lg.id)}>
+                                <TableCell className="num py-1.5 text-[11px] text-muted-foreground">
+                                  {isNew && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-primary" />}
+                                  {ts(lg.bar_time ?? lg.created_at)}
+                                </TableCell>
+                                <TableCell className={`py-1.5 text-[11px] ${a.cls}`}>{a.label}</TableCell>
+                                <TableCell className="num py-1.5 text-right text-[11px]">{px(lg.stop)}</TableCell>
+                                <TableCell className={`num py-1.5 text-right text-[11px] ${pnlClass(lg.slope)}`}>{num(lg.slope, 1)}</TableCell>
+                              </TableRow>
+                              {expanded && (
+                                <TableRow className="border-border/60 bg-panel/60 hover:bg-panel/60">
+                                  <TableCell colSpan={4} className="py-2">
+                                    {err ? (
+                                      <div className="text-[10px] text-warn">{err}</div>
+                                    ) : (
+                                      <div className="space-y-1.5">
+                                        {ex?.reason && <div className="text-[10px]">{ex.reason}</div>}
+                                        <div className="num flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+                                          {typeof lg.detail?.close === "number" && <span>收盘 {px(lg.detail.close)}</span>}
+                                          {lg.atr != null && <span>ATR {px(lg.atr)}</span>}
+                                          {ex?.ema != null && <span>EMA {px(ex.ema)}</span>}
+                                          {ex?.dist_atr != null && <span>距 EMA {ex.dist_atr > 0 ? "+" : ""}{num(ex.dist_atr, 1)} ATR</span>}
+                                          {lg.qty != null && <span>数量 {num(lg.qty, 4)}</span>}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
                           );
                         })}
                       </TableBody>

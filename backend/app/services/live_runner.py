@@ -144,7 +144,7 @@ async def tick(executor_id: str) -> dict | None:
                 side=(state.get("position") or {}).get("side"),
                 qty=sig.suggested_qty or None, stop=sig.suggested_stop,
                 atr=sig.atr, slope=sig.slope,
-                detail={"close": sig.close, "dry_run": dry}))
+                detail={"close": sig.close, "dry_run": dry, "explain": sig.explain}))
             await s.commit()
             return {"executor_id": m.id, "action": action}
         finally:
