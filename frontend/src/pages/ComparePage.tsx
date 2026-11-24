@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { Eye, RefreshCw, Trash2 } from "lucide-react";
 import { api, type BacktestRunSummary, type EquityPoint } from "@/lib/api";
 import { num, pct, pnlClass, ts } from "@/lib/format";
 import EquityChart, { type EquitySeries } from "@/components/EquityChart";
@@ -26,6 +27,7 @@ function normalize(points: EquityPoint[]): EquityPoint[] {
 }
 
 export default function ComparePage() {
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<BacktestRunSummary[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [curves, setCurves] = useState<Record<string, EquityPoint[]>>({});
@@ -234,13 +236,22 @@ export default function ComparePage() {
                   </TableCell>
                   <TableCell className="num text-right text-xs">{num(r.metrics?.sharpe)}</TableCell>
                   <TableCell>
-                    <button
-                      className="text-muted-foreground hover:text-down"
-                      onClick={(e) => { e.stopPropagation(); remove(r.job_id); }}
-                      title="删除存档"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="text-muted-foreground hover:text-primary"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/backtest?job=${r.job_id}`); }}
+                        title="在工作台查看详情"
+                      >
+                        <Eye size={13} />
+                      </button>
+                      <button
+                        className="text-muted-foreground hover:text-down"
+                        onClick={(e) => { e.stopPropagation(); remove(r.job_id); }}
+                        title="删除存档"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );

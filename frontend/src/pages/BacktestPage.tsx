@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Play, Square } from "lucide-react";
 import { api, TIMEFRAMES, type BacktestJob, type BacktestResult, type StrategyInfo, type Trade } from "@/lib/api";
@@ -61,6 +62,24 @@ export default function BacktestPage() {
     pollRef.current = null;
   };
   useEffect(() => stopPoll, []);
+
+  // 从存档恢复查看（对比页"查看"跳转 ?job=<id>）：
+  // 指标与权益曲线走 DB 回源（跨会话可查）；交易明细仅存内存，重启后为空
+  const [searchParams] = useSearchParams();
+  const archiveJob = searchParams.get("job");
+  useEffect(() => {
+    if (!archiveJob) return;
+    setError(null);
+    setResult(null);
+    setSeries([]);
+    setTrades([]);
+    setJob({ job_id: archiveJob, status: "done", created_at: "" });
+    loadResult(archiveJob).catch(() => {
+      setError("存档加载失败：可能已被删除或尚未完成");
+      setJob(null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [archiveJob]);
 
   const loadResult = useCallback(async (jobId: string) => {
     const [res, tr] = await Promise.all([api.backtestResult(jobId), api.backtestTrades(jobId)]);
@@ -320,7 +339,11 @@ export default function BacktestPage() {
               </Table>
             ) : (
               <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
-                {result ? "无交易记录" : "—"}
+                {result
+                  ? archiveJob
+                    ? "存档不含逐笔明细（仅本次会话内跑的回测可查）"
+                    : "无交易记录"
+                  : "—"}
               </div>
             )}
           </div>
