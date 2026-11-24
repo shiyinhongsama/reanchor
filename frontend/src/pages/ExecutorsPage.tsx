@@ -79,7 +79,7 @@ function CreateExecutorDialog({ strategies, onCreated }: { strategies: StrategyI
     name: "", strategy: "ema_pullback_v1", symbol: "BTCUSDT", timeframe: "1d",
     equity_budget: 1000, risk_pct: 5, vol_target: 0.25, max_leverage: 3,
   });
-  const [params, setParams] = useState<Record<string, number>>({});
+  const [params, setParams] = useState<Record<string, number | string>>({});
   const [busy, setBusy] = useState(false);
   const info = strategies.find((s) => s.name === form.strategy);
 
@@ -173,10 +173,20 @@ function CreateExecutorDialog({ strategies, onCreated }: { strategies: StrategyI
                 {Object.entries(info.params).map(([k, spec]) => (
                   <div key={k}>
                     <Label className="text-[10px] text-muted-foreground">{k}</Label>
-                    <Input type="number" step={spec.type === "int" ? 1 : 0.1}
-                      value={params[k] ?? spec.default}
-                      onChange={(e) => setParams({ ...params, [k]: +e.target.value })}
-                      className="h-8 text-xs" />
+                    {spec.options ? (
+                      <Select value={String(params[k] ?? spec.default)}
+                        onValueChange={(v) => setParams({ ...params, [k]: v })}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {spec.options.map((o) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input type="number" step={spec.type === "int" ? 1 : 0.1}
+                        value={params[k] ?? spec.default as number}
+                        onChange={(e) => setParams({ ...params, [k]: +e.target.value })}
+                        className="h-8 text-xs" />
+                    )}
                   </div>
                 ))}
               </div>

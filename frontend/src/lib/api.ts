@@ -55,10 +55,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ---------- 类型（与后端 schemas 对齐） ----------
 
+export type ParamSpec = { type: string; default: number | string; min?: number; max?: number; options?: string[] };
+
 export interface StrategyInfo {
   name: string;
   description: string;
-  params: Record<string, { type: string; default: number; min?: number; max?: number }>;
+  params: Record<string, ParamSpec>;
 }
 
 export interface BacktestRequest {
@@ -67,7 +69,7 @@ export interface BacktestRequest {
   timeframe: string;
   start?: string | null;
   end?: string | null;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
   risk_frac: number;
   vol_target: number;
   max_leverage: number;
@@ -109,7 +111,7 @@ export interface BacktestRunSummary {
   strategy: string;
   symbols: string[];
   timeframe: string;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
   risk_frac: number;
   vol_target: number;
   max_leverage: number;
@@ -157,7 +159,7 @@ export interface Executor {
   strategy_name: string;
   symbol: string;
   timeframe: string;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
   equity_budget: number;
   risk_frac: number;
   vol_target: number;
@@ -179,7 +181,7 @@ export interface ExecutorCreate {
   strategy: string;
   symbol: string;
   timeframe: string;
-  params: Record<string, number>;
+  params: Record<string, number | string>;
   equity_budget: number;
   risk_frac: number;
   vol_target: number;

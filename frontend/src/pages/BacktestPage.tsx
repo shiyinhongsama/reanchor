@@ -36,7 +36,7 @@ export default function BacktestPage() {
     slippage_bp: 2,
     initial_equity: 10000,
   });
-  const [params, setParams] = useState<Record<string, number>>({});
+  const [params, setParams] = useState<Record<string, number | string>>({});
   const [job, setJob] = useState<BacktestJob | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [series, setSeries] = useState<EquitySeries[]>([]);
@@ -247,13 +247,25 @@ export default function BacktestPage() {
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(stratInfo.params).map(([k, spec]) => (
                 <div key={k}>
-                  <Label className="text-[10px] text-muted-foreground">{k} [{spec.min}–{spec.max}]</Label>
-                  <Input
-                    type="number" step={spec.type === "int" ? 1 : 0.1}
-                    value={params[k] ?? spec.default}
-                    onChange={(e) => setParams({ ...params, [k]: +e.target.value })}
-                    className="h-8 text-xs"
-                  />
+                  <Label className="text-[10px] text-muted-foreground">
+                    {k} {spec.options ? "" : `[${spec.min}–${spec.max}]`}
+                  </Label>
+                  {spec.options ? (
+                    <Select value={String(params[k] ?? spec.default)}
+                      onValueChange={(v) => setParams({ ...params, [k]: v })}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {spec.options.map((o) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      type="number" step={spec.type === "int" ? 1 : 0.1}
+                      value={params[k] ?? spec.default as number}
+                      onChange={(e) => setParams({ ...params, [k]: +e.target.value })}
+                      className="h-8 text-xs"
+                    />
+                  )}
                 </div>
               ))}
             </div>

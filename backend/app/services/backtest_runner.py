@@ -22,9 +22,10 @@ from ..infrastructure.models import BacktestRunModel
 from ..schemas import (BacktestRequest, SWEEP_MAX_COMBOS, SweepRequest,
                        SymbolMetrics)
 from ..strategies.ema_pullback_v1 import EmaPullbackV1
+from ..strategies.ema_trend_v1 import EmaTrendV1
 from .backtest_engine import BacktestEngine, CostModel
 
-STRATEGIES = {"ema_pullback_v1": EmaPullbackV1}
+STRATEGIES = {"ema_pullback_v1": EmaPullbackV1, "ema_trend_v1": EmaTrendV1}
 
 
 def _ms(dt) -> int:

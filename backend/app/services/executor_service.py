@@ -34,12 +34,18 @@ def effective_params(strat_cls, overrides: dict) -> dict:
     eff = {}
     for key, spec in schema.items():
         v = overrides.get(key, spec["default"])
-        try:
-            v = int(v) if spec["type"] == "int" else float(v)
-        except (TypeError, ValueError):
-            raise ValueError(f"参数 {key} 类型错误，期望 {spec['type']}") from None
-        if v < spec.get("min", v) or v > spec.get("max", v):
-            raise ValueError(f"参数 {key}={v} 超出范围 [{spec.get('min')}, {spec.get('max')}]")
+        if spec["type"] == "str":                      # 枚举型参数（如 ma_type）
+            v = str(v)
+            opts = spec.get("options")
+            if opts and v not in opts:
+                raise ValueError(f"参数 {key}={v} 不在可选范围 {opts}")
+        else:
+            try:
+                v = int(v) if spec["type"] == "int" else float(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"参数 {key} 类型错误，期望 {spec['type']}") from None
+            if v < spec.get("min", v) or v > spec.get("max", v):
+                raise ValueError(f"参数 {key}={v} 超出范围 [{spec.get('min')}, {spec.get('max')}]")
         eff[key] = v
     return eff
 

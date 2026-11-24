@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from ..domain.strategy import BarContext, StrategyParams
+from .ma import MA_TYPES, ma_series
 
 
 class EmaPullbackV1:
@@ -29,6 +30,8 @@ class EmaPullbackV1:
         "atr_mult": {"type": "float", "default": 3.0, "min": 1.0, "max": 8.0},
         # 重锚模式：1=研究 v1 每根收盘重锚；>=2=研究 v2 斜率同向满 N 根才重锚（其间峰值跟踪）
         "reanchor_min_bars": {"type": "int", "default": 1, "min": 1, "max": 10},
+        # 均线类型：研究阶段均线族对比（ema/sma/wma/dema/tema），默认 ema 与研究基线一致
+        "ma_type": {"type": "str", "default": "ema", "options": list(MA_TYPES)},
     }
 
     def prepare(self, bars: pd.DataFrame, params: StrategyParams) -> pd.DataFrame:
@@ -37,7 +40,7 @@ class EmaPullbackV1:
         atr_n = params.get("atr_n", 14)
         d = bars.copy()
         c = d["close"]
-        d["ema"] = c.ewm(span=ema_n, adjust=False).mean()
+        d["ema"] = ma_series(c, ema_n, params.get("ma_type", "ema"))
         d["slope"] = d["ema"] - d["ema"].shift(slope_k)
         tr = pd.concat([d["high"] - d["low"],
                         (d["high"] - c.shift(1)).abs(),
