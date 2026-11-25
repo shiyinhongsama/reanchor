@@ -324,6 +324,28 @@ export interface LiveStatus {
 
 export interface SchedulerJob { executor_id: string; next_run: string | null }
 
+export interface MarketTicker {
+  symbol: string;
+  last: number;
+  change_pct: number;
+  volume_usd: number;
+  high_24h: number;
+  low_24h: number;
+}
+
+export interface MarketOverview {
+  as_of: string;
+  fng: { value: number; label: string; prev_value?: number } | null;
+  breadth: {
+    advancers: number;
+    decliners: number;
+    flat: number;
+    avg_change_pct: number | null;
+    total_volume_usd: number;
+  };
+  heatmap: MarketTicker[];
+}
+
 export const TIMEFRAMES = ["1m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","2d","1w"] as const;
 
 // ---------- 调用 ----------
@@ -391,6 +413,8 @@ export const api = {
   executorBars: (id: string, limit = 300) =>
     req<{ bars: { t: string; o: number; h: number; l: number; c: number }[] }>(
       `/executors/${id}/bars?limit=${limit}`),
+
+  marketOverview: () => req<MarketOverview>("/market/overview"),
 
   liveStatus: () => req<LiveStatus>("/live/status"),
   scheduler: () => req<{ jobs: SchedulerJob[] }>("/live/scheduler"),

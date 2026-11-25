@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
-import { Activity, FlaskConical, GitCompareArrows, LogOut } from "lucide-react";
+import { Activity, FlaskConical, GitCompareArrows, Globe, LogOut } from "lucide-react";
 import { api, auth, type LiveStatus } from "@/lib/api";
 import BacktestPage from "@/pages/BacktestPage";
 import ComparePage from "@/pages/ComparePage";
 import ExecutorsPage from "@/pages/ExecutorsPage";
 import LoginPage from "@/pages/LoginPage";
+import MarketPage from "@/pages/MarketPage";
 import { Toaster } from "@/components/ui/sonner";
 
 function useUtcClock() {
@@ -63,6 +64,9 @@ function Header() {
       </div>
 
       <nav className="ml-10 flex items-center gap-1 self-stretch">
+        <NavLink to="/market" className={tab}>
+          <span className="inline-flex items-center gap-1.5"><Globe size={13} />大盘</span>
+        </NavLink>
         <NavLink to="/backtest" className={tab}>
           <span className="inline-flex items-center gap-1.5"><FlaskConical size={13} />回测工作台</span>
         </NavLink>
@@ -117,7 +121,8 @@ export default function App() {
       <Header />
       <main className="flex min-h-0 flex-1 flex-col">
         <Routes>
-          <Route path="/" element={<Navigate to="/backtest" replace />} />
+          <Route path="/" element={<Navigate to="/market" replace />} />
+          <Route path="/market" element={<MarketPage />} />
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/executors" element={<ExecutorsPage />} />
           <Route path="/compare" element={<ComparePage />} />
