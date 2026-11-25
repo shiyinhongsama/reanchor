@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Check, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   api, seenSignals, TIMEFRAMES,
-  type Executor, type ExecutorSignal, type SchedulerJob, type SignalExplain, type SignalLog, type StrategyInfo,
+  type Executor, type ExecutorSignal, type MarketOverview, type SchedulerJob, type SignalExplain, type SignalLog, type StrategyInfo,
 } from "@/lib/api";
 import { num, pct, pnlClass, px, ts } from "@/lib/format";
 import EquityChart from "@/components/EquityChart";
@@ -38,6 +38,22 @@ const CHK_LABEL: Record<string, string> = {
   touched: "当根触及 EMA", reclaimed: "收回 EMA 上方", rejected: "压回 EMA 下方",
   slope_ok: "斜率同向",
 };
+
+/** 大盘环境提示：极端情绪 × 持仓/信号方向 → 顺势/逆势标签。 */
+function envHint(fng: number | null | undefined, side: number): { label: string; cls: string } | null {
+  if (fng == null || side === 0) return null;
+  if (fng <= 20) {
+    return side > 0
+      ? { label: "恐慌期逆势多", cls: "text-warn" }
+      : { label: "恐慌期顺势空", cls: "text-up" };
+  }
+  if (fng >= 80) {
+    return side > 0
+      ? { label: "贪婪期顺势多", cls: "text-up" }
+      : { label: "贪婪期逆势空", cls: "text-warn" };
+  }
+  return null;
+}
 
 /** 信号解释卡：入场条件逐项 ✓/✗ + 人类可读结论。 */
 function ExplainCard({ explain }: { explain: SignalExplain }) {
@@ -212,6 +228,7 @@ export default function ExecutorsPage() {
   const [signalBusy, setSignalBusy] = useState(false);
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [, setSeenTick] = useState(0);
+  const [mkt, setMkt] = useState<MarketOverview | null>(null);
   // 抽屉打开时的已读水位：流水里 id 大于它的行视为"新信号"高亮
   const seenAtOpen = useRef<Record<string, number>>({});
 
@@ -233,6 +250,14 @@ export default function ExecutorsPage() {
     const id = setInterval(() => reload(true), 5_000);   // 列表 5s 静默轮询
     return () => clearInterval(id);
   }, [reload]);
+
+  // 大盘环境：60s 一拍（后端同频缓存）；失败静默，不阻塞执行器列表
+  useEffect(() => {
+    const load = () => api.marketOverview().then(setMkt).catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const markSeen = (executorId: string, signals: SignalLog[]) => {
     const maxId = Math.max(0, ...signals.map((s) => s.id));
@@ -352,6 +377,37 @@ export default function ExecutorsPage() {
         </div>
       </div>
 
+      {/* 大盘环境条：极端情绪时高亮预警 */}
+      {mkt && (
+        <div className={`flex items-center gap-4 border-b px-4 py-1.5 text-[10px] ${
+          (mkt.fng && (mkt.fng.value <= 20 || mkt.fng.value >= 80))
+            ? "border-warn/40 bg-warn/10" : "border-border bg-card"
+        }`}>
+          <span className="section-label">ENV / 大盘环境</span>
+          {mkt.fng ? (
+            <span>
+              恐慌贪婪 <span className={`num font-bold ${mkt.fng.value <= 25 ? "text-down" : mkt.fng.value >= 75 ? "text-up" : ""}`}>
+                {mkt.fng.value}
+              </span>
+              {mkt.fng.value <= 20 && <span className="ml-1 text-warn">极度恐慌期 · 注意逆势开仓风险</span>}
+              {mkt.fng.value >= 80 && <span className="ml-1 text-warn">极度贪婪期 · 注意追高与逆势做空风险</span>}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">恐慌贪婪指数暂不可用</span>
+          )}
+          <span className="text-muted-foreground">
+            涨 <span className="num text-up">{mkt.breadth.advancers}</span> /
+            跌 <span className="num text-down">{mkt.breadth.decliners}</span>
+          </span>
+          {mkt.breadth.avg_change_pct != null && (
+            <span className="text-muted-foreground">
+              均涨跌 <span className={`num ${pnlClass(mkt.breadth.avg_change_pct)}`}>
+                {mkt.breadth.avg_change_pct >= 0 ? "+" : ""}{mkt.breadth.avg_change_pct.toFixed(2)}%
+              </span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         {executors.length === 0 ? (
           <div className="m-4 flex h-48 items-center justify-center border border-dashed border-border text-xs text-muted-foreground">
@@ -369,6 +425,7 @@ export default function ExecutorsPage() {
                 <TableHead className="text-[10px] text-right">预算</TableHead>
                 <TableHead className="text-[10px] text-right">账面权益</TableHead>
                 <TableHead className="text-[10px]">持仓</TableHead>
+                <TableHead className="text-[10px]">环境</TableHead>
                 <TableHead className="text-[10px]">下次触发</TableHead>
                 <TableHead className="text-[10px] text-right">操作</TableHead>
               </TableRow>
@@ -421,6 +478,14 @@ export default function ExecutorsPage() {
                           {pos.side > 0 ? "多" : "空"} {num(pos.qty, 4)}
                         </span>
                       ) : <span className="text-muted-foreground">空仓</span>}
+                    </TableCell>
+                    <TableCell className="py-2 text-[11px]">
+                      {(() => {
+                        const hint = pos ? envHint(mkt?.fng?.value, pos.side) : null;
+                        return hint
+                          ? <span className={`text-[10px] ${hint.cls}`}>{hint.label}</span>
+                          : <span className="text-muted-foreground">—</span>;
+                      })()}
                     </TableCell>
                     <TableCell className="num py-2 text-[11px] text-muted-foreground">
                       {ex.status === "running" ? ts(nextRun(ex.id)) : "—"}
