@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     secret_key: str = "reanchor-dev-secret-change-me"
     token_ttl_hours: int = 168            # 令牌有效期，默认 7 天
 
+    # 新闻采集：部分 RSS 源（如 coindesk）国内直连超时，配代理后自动回退
+    news_proxy: str = ""                  # 如 http://127.0.0.1:7897
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -8,7 +8,8 @@ from .core.auth import AuthMiddleware
 from .core.config import get_settings
 from .infrastructure.db import init_db
 from .services.live_runner import runner as live_runner
-from .api.v1 import auth, backtests, executors, live, market
+from .services.news_service import news_service
+from .api.v1 import auth, backtests, executors, live, market, news
 
 settings = get_settings()
 
@@ -17,7 +18,9 @@ settings = get_settings()
 async def lifespan(_: FastAPI):
     await init_db()              # 一期 SQLite 自动建表；迁移 Postgres 后改 Alembic
     await live_runner.start()    # 恢复 running 执行器的调度任务
+    news_service.start()         # 新闻采集：15 分钟一拍 + 每日清理
     yield
+    await news_service.shutdown()
     await live_runner.shutdown()
 
 
@@ -39,6 +42,7 @@ app.include_router(backtests.router, prefix="/api/v1")
 app.include_router(executors.router, prefix="/api/v1")
 app.include_router(live.router, prefix="/api/v1")
 app.include_router(market.router, prefix="/api/v1")
+app.include_router(news.router, prefix="/api/v1")
 
 
 @app.get("/api/health")

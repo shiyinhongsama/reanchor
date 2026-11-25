@@ -115,3 +115,26 @@ class SignalLogModel(Base):
     slope: Mapped[float | None] = mapped_column(Float, nullable=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class NewsModel(Base):
+    """新闻条目：多源 RSS 定时采集，去重入库后由情绪模型打标。
+
+    - id = url 的 sha1 前 16 位（天然幂等去重键）；
+    - title_hash = 规范化标题的 sha1 前 16 位（同稿不同源跨站去重）；
+    - sentiment: bullish / bearish / neutral（CryptoBERT），score ∈ [-1, 1]；
+      中文源暂不打分（lang=zh，sentiment=None）。
+    """
+    __tablename__ = "news"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    title_hash: Mapped[str] = mapped_column(String(16), index=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    url: Mapped[str] = mapped_column(String(1000), default="")
+    lang: Mapped[str] = mapped_column(String(8), default="en")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                          nullable=True, index=True)
+    sentiment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

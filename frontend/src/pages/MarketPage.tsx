@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { api, type MarketOverview, type MarketTicker } from "@/lib/api";
 import { num, pct } from "@/lib/format";
 import Metric from "@/components/Metric";
+import NewsPanel from "@/components/NewsPanel";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -124,9 +125,11 @@ export default function MarketPage() {
         )}
       </div>
 
+      {/* 新闻情绪 + 新闻流 */}
+      <NewsPanel />
+
       {/* 明细表 */}
-      {data && data.heatmap.length > 0 && (
-        <div className="rounded-md border border-border bg-card">
+      {data && data.heatmap.length > 0 && (        <div className="rounded-md border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">

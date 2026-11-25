@@ -346,6 +346,26 @@ export interface MarketOverview {
   heatmap: MarketTicker[];
 }
 
+export interface NewsItem {
+  id: string;
+  source: string;
+  title: string;
+  url: string;
+  lang: string;
+  published_at: string | null;
+  sentiment: "bullish" | "bearish" | "neutral" | null;
+  score: number | null;
+}
+
+export interface NewsSentiment {
+  hours: number;
+  score: number | null;
+  count: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+}
+
 export const TIMEFRAMES = ["1m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","2d","1w"] as const;
 
 // ---------- 调用 ----------
@@ -415,6 +435,9 @@ export const api = {
       `/executors/${id}/bars?limit=${limit}`),
 
   marketOverview: () => req<MarketOverview>("/market/overview"),
+  news: (hours = 48, limit = 60) =>
+    req<{ news: NewsItem[] }>(`/news?hours=${hours}&limit=${limit}`),
+  newsSentiment: (hours = 24) => req<NewsSentiment>(`/news/sentiment?hours=${hours}`),
 
   liveStatus: () => req<LiveStatus>("/live/status"),
   scheduler: () => req<{ jobs: SchedulerJob[] }>("/live/scheduler"),
