@@ -20,7 +20,8 @@ from ..domain.timeframes import TIMEFRAMES
 from ..infrastructure.db import SessionLocal
 from ..infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 from ..infrastructure.models import BacktestRunModel
-from ..schemas import (BacktestRequest, SWEEP_MAX_COMBOS, SweepRequest,
+from ..schemas import (BacktestRequest, COSTSENS_MAX_CELLS, CostSensitivityRequest,
+                       SWEEP_MAX_COMBOS, SweepRequest,
                        SymbolMetrics, WalkForwardRequest)
 from ..strategies.ema_pullback_v1 import EmaPullbackV1
 from ..strategies.ema_trend_v1 import EmaTrendV1
@@ -69,6 +70,54 @@ class BacktestRunner:
         self.results: dict[str, dict] = {}
         self.sweeps: dict[str, dict] = {}
         self.wfs: dict[str, dict] = {}
+        self.costsens: dict[str, dict] = {}
+
+    async def submit_costsens(self, req: CostSensitivityRequest) -> tuple[str, int]:
+        """成本敏感性：费率 × 滑点网格，全部单元格共享一份 K 线，不逐格存档。"""
+        total = len(req.fees) * len(req.slippages)
+        if total > COSTSENS_MAX_CELLS:
+            raise ValueError(f"网格单元数 {total} 超过上限 {COSTSENS_MAX_CELLS}")
+        cs_id = uuid.uuid4().hex[:12]
+        self.costsens[cs_id] = {"status": "running", "total": total, "done": 0,
+                                "created_at": datetime.now(timezone.utc)}
+        asyncio.create_task(self._run_costsens(cs_id, req))
+        return cs_id, total
+
+    async def _run_costsens(self, cs_id: str, req: CostSensitivityRequest) -> None:
+        cs = self.costsens[cs_id]
+        try:
+            bars = await self._fetch_bars(req)
+            cells = []
+            for fee in req.fees:
+                for slip in req.slippages:
+                    bt = BacktestRequest(
+                        strategy=req.strategy, symbols=req.symbols, timeframe=req.timeframe,
+                        start=req.start, end=req.end, params=req.params,
+                        risk_frac=req.risk_frac, vol_target=req.vol_target,
+                        max_leverage=req.max_leverage, fee=fee, slippage=slip,
+                        initial_equity=req.initial_equity,
+                        deposit_amount=req.deposit_amount,
+                        deposit_every_days=req.deposit_every_days)
+                    job_id = uuid.uuid4().hex[:12]
+                    try:
+                        self._execute(job_id, bt, bars)
+                        head = (self.results[job_id]["summary"]["portfolio"]
+                                or self.results[job_id]["summary"]["per_symbol"][0])
+                        cells.append({"fee": fee, "slippage": slip,
+                                      **head.model_dump(exclude={"symbol"})})
+                    except Exception as e:  # noqa: BLE001 - 单格失败记错误不中断网格
+                        cells.append({"fee": fee, "slippage": slip, "error": str(e)})
+                    finally:  # 成本网格不存档、不留内存残渣
+                        self.results.pop(job_id, None)
+                        self.jobs.pop(job_id, None)
+                    cs["done"] += 1
+            cs.update({"status": "done", "finished_at": datetime.now(timezone.utc),
+                       "result": {"fees": req.fees, "slippages": req.slippages, "cells": cells}})
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            cs.update({"status": "failed",
+                       "error": f"{e}\n{traceback.format_exc(limit=3)}",
+                       "finished_at": datetime.now(timezone.utc)})
 
     async def submit(self, req: BacktestRequest) -> str:
         job_id = uuid.uuid4().hex[:12]

@@ -16,8 +16,9 @@ from ...infrastructure.exchange.ccxt_gate import CcxtGateAdapter
 from ...infrastructure.models import BacktestRunModel
 from ...services import bars_service
 from ...schemas import (BacktestJob, BacktestRequest, BacktestResultResponse,
-                        BacktestRunSummary, SweepJob, SweepRequest, SymbolMetrics,
-                        WalkForwardRequest)
+                        BacktestRunSummary, CostSensitivityJob,
+                        CostSensitivityRequest, SweepJob, SweepRequest,
+                        SymbolMetrics, WalkForwardRequest)
 from ...services.backtest_runner import STRATEGIES, runner
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -49,6 +50,29 @@ async def create_sweep(req: SweepRequest):
     sw = runner.sweeps[sweep_id]
     return SweepJob(sweep_id=sweep_id, status=sw["status"], total=total, done=0,
                     job_ids=[], created_at=sw["created_at"])
+
+
+@router.post("/cost-sensitivity", response_model=CostSensitivityJob, status_code=202)
+async def create_costsens(req: CostSensitivityRequest):
+    """成本敏感性：固定参数按 费率×滑点 网格重跑，检验策略对成本的耐受度。"""
+    if req.strategy not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy: {req.strategy}")
+    try:
+        cs_id, total = await runner.submit_costsens(req)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    cs = runner.costsens[cs_id]
+    return CostSensitivityJob(cs_id=cs_id, status=cs["status"], total=total, done=0,
+                              created_at=cs["created_at"])
+
+
+@router.get("/cost-sensitivity/{cs_id}")
+async def get_costsens(cs_id: str):
+    """成本敏感性状态与结果（内存态，重启后失效）。"""
+    cs = runner.costsens.get(cs_id)
+    if not cs:
+        raise HTTPException(404, "cost sensitivity not found（状态仅存内存）")
+    return {"cs_id": cs_id, **cs}
 
 
 @router.post("/walkforward", status_code=202)

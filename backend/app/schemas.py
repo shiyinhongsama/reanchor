@@ -107,6 +107,40 @@ class SweepJob(BaseModel):
     created_at: datetime
 
 
+# ---------- 成本敏感性 ----------
+
+COSTSENS_MAX_CELLS = 16
+
+
+class CostSensitivityRequest(BaseModel):
+    """成本敏感性：固定策略与参数，按 费率 × 滑点 网格批量重跑（共享一份 K 线），
+    检验策略对交易成本的耐受度。信号与定仓不依赖成本，因此同一网格内交易序列一致，
+    收益随成本严格单调——这是验证正确性的不变量。
+    """
+    strategy: str = "ema_pullback_v1"
+    symbols: list[str] = Field(default=["BTCUSDT"])
+    timeframe: str = Field(default="1d", pattern=_TF_PATTERN)
+    start: datetime | None = None
+    end: datetime | None = None
+    params: dict = Field(default_factory=dict)
+    risk_frac: float = Field(default=0.05, gt=0, le=0.5)
+    vol_target: float = Field(default=0.25, ge=0)
+    max_leverage: float = Field(default=3.0, gt=0, le=10)
+    initial_equity: float = Field(default=10_000.0, gt=0)
+    deposit_amount: float = Field(default=0.0, ge=0)
+    deposit_every_days: int = Field(default=30, ge=1)
+    fees: list[float] = Field(default=[0.0005], description="费率候选（小数，如 0.0005 = 5bp）")
+    slippages: list[float] = Field(default=[0.0002], description="滑点候选")
+
+
+class CostSensitivityJob(BaseModel):
+    cs_id: str
+    status: str                     # running | done | failed
+    total: int
+    done: int
+    created_at: datetime
+
+
 class WalkForwardRequest(BaseModel):
     """走步验证（Walk-Forward）：区间切成 folds 个顺序窗口，每窗前 train_frac 为
     训练段、其余为样本外测试段。

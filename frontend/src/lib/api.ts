@@ -192,6 +192,36 @@ export interface SweepJob {
   created_at: string;
 }
 
+export interface CostCell extends Partial<SymbolMetrics> {
+  fee: number;
+  slippage: number;
+  error?: string;
+}
+
+export interface CostSensitivityJob {
+  cs_id: string;
+  status: "running" | "done" | "failed";
+  total: number;
+  done: number;
+  created_at?: string;
+  error?: string;
+  result?: { fees: number[]; slippages: number[]; cells: CostCell[] };
+}
+
+export interface CostSensitivityRequest {
+  strategy: string;
+  symbols: string[];
+  timeframe: string;
+  start?: string | null;
+  params: Record<string, number | string>;
+  risk_frac: number;
+  vol_target: number;
+  max_leverage: number;
+  initial_equity: number;
+  fees: number[];
+  slippages: number[];
+}
+
 export interface Trade {
   symbol?: string;
   entry_time: string;
@@ -341,6 +371,9 @@ export const api = {
   walkforward: (body: WalkForwardRequest) =>
     req<{ wf_id: string }>("/backtests/walkforward", { method: "POST", body: JSON.stringify(body) }),
   walkforwardStatus: (id: string) => req<WalkForwardJob>(`/backtests/walkforward/${id}`),
+  costSensitivity: (body: CostSensitivityRequest) =>
+    req<CostSensitivityJob>("/backtests/cost-sensitivity", { method: "POST", body: JSON.stringify(body) }),
+  costSensitivityStatus: (id: string) => req<CostSensitivityJob>(`/backtests/cost-sensitivity/${id}`),
 
   executors: () => req<Executor[]>("/executors"),
   createExecutor: (body: ExecutorCreate) =>
