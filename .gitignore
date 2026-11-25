@@ -19,3 +19,6 @@ frontend/dist/
 # ---- 系统 ----
 .DS_Store
 Thumbs.db
+
+# 验证截图（本地留存，不入库）
+shot_*.png
