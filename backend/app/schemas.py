@@ -23,6 +23,8 @@ class BacktestRequest(BaseModel):
     fee: float = 0.0005
     slippage: float = 0.0002
     initial_equity: float = Field(default=10_000.0, gt=0)
+    deposit_amount: float = Field(default=0.0, ge=0, description="定投入金金额（0=不定投）")
+    deposit_every_days: int = Field(default=30, ge=1, description="定投入金间隔（天）")
 
 
 class BacktestJob(BaseModel):
@@ -42,6 +44,8 @@ class SymbolMetrics(BaseModel):
     calmar: float | None = None
     trades: int
     profit_factor: float | None = None
+    total_deposited: float | None = None   # 定投模式：累计入金
+    net_profit: float | None = None        # 定投模式：账户终值 - 初始资金 - 累计入金
 
 
 class BacktestResultResponse(BaseModel):
@@ -85,6 +89,8 @@ class SweepRequest(BaseModel):
     fee: float = 0.0005
     slippage: float = 0.0002
     initial_equity: float = Field(default=10_000.0, gt=0)
+    deposit_amount: float = Field(default=0.0, ge=0)
+    deposit_every_days: int = Field(default=30, ge=1)
     max_leverage: float = Field(default=3.0, gt=0, le=10)
     # 网格维度（每个至少 1 个值）
     risk_fracs: list[float] = Field(default=[0.05])

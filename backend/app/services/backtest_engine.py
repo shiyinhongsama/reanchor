@@ -29,18 +29,22 @@ class BacktestResult:
     equity: pd.Series
     trades: pd.DataFrame
     metrics: dict = field(default_factory=dict)
+    nav: pd.Series | None = None    # 定投模式：剔除入金影响的份额净值曲线
 
 
 class BacktestEngine:
     def __init__(self, strategy: Strategy, params: StrategyParams,
                  sizing: SizingConfig, cost: CostModel,
-                 initial_equity: float = 10_000.0, warmup: int = 60):
+                 initial_equity: float = 10_000.0, warmup: int = 60,
+                 deposit_amount: float = 0.0, deposit_every_days: int = 30):
         self.strategy = strategy
         self.params = params
         self.sizing = sizing
         self.cost = cost
         self.initial_equity = initial_equity
         self.warmup = warmup
+        self.deposit_amount = deposit_amount
+        self.deposit_every_days = deposit_every_days
 
     def run(self, raw_bars: pd.DataFrame) -> BacktestResult:
         d = self.strategy.prepare(raw_bars, self.params)
@@ -56,6 +60,15 @@ class BacktestEngine:
         trades: list[dict] = []
         cur: dict = {}
 
+        # 定投（份额法记账）：入金按当时净值折算份额，绩效指标用 nav 曲线计算，
+        # 入金本身不产生收益、不抬高夏普/年化；equity 曲线为账户真实资金（含入金）
+        dca = self.deposit_amount > 0
+        units = self.initial_equity            # 初始净值 1.0
+        total_deposited = 0.0
+        navs = np.full(n, np.nan)
+        step = pd.Timedelta(days=self.deposit_every_days)
+        next_dep = (d.open_time.iloc[self.warmup] + step) if dca else None
+
         def record(i: int, px: float, reason: str) -> None:
             nonlocal equity, pos, stop
             pnl = pos * (px - entry_px) - abs(pos) * px * self.cost.fee
@@ -68,7 +81,23 @@ class BacktestEngine:
         for t in range(self.warmup, n):
             row = d.iloc[t]
             o, h, l, cl = row.open, row.high, row.low, row.close
+
+            # 0) 定投入金：按入金前账户价值折算份额（持仓按上根收盘估值）
+            if next_dep is not None:
+                while row.open_time >= next_dep:
+                    pre_val = equity + pos * (d.close.iloc[t - 1] - entry_px) if pos != 0 else equity
+                    nav_pre = max(pre_val / units, 1e-9) if units > 0 else 1.0
+                    equity += self.deposit_amount
+                    units += self.deposit_amount / nav_pre
+                    total_deposited += self.deposit_amount
+                    next_dep += step
+
             if equity <= 0:
+                # 定投模式下空仓爆仓不终止：等下一笔入金；有持仓则视为强平终止
+                if pos == 0 and next_dep is not None:
+                    eq_curve[t] = equity
+                    navs[t] = equity / units
+                    continue
                 break
 
             # 1) 信号出场（昨日信号 → 今日开盘执行）
@@ -114,32 +143,43 @@ class BacktestEngine:
             if pos != 0 and self.cost.funding_per_8h > 0 and row.open_time.hour % 8 == 0:
                 equity -= pos * cl * self.cost.funding_per_8h
 
-            eq_curve[t] = equity + pos * (cl - entry_px) if pos != 0 else equity
-            if t > self.warmup and not np.isnan(eq_curve[t - 1]) and eq_curve[t - 1] > 0:
-                ret_hist.append(eq_curve[t] / eq_curve[t - 1] - 1)
+            eq_val = equity + pos * (cl - entry_px) if pos != 0 else equity
+            eq_curve[t] = eq_val
+            navs[t] = eq_val / units if units > 0 else np.nan
+            if t > self.warmup and not np.isnan(navs[t - 1]) and navs[t - 1] > 0:
+                ret_hist.append(navs[t] / navs[t - 1] - 1)
 
         # 期末强平
         if pos != 0:
             record(n - 1, d.close.iloc[-1] * (1 - self.cost.slippage if pos > 0 else 1 + self.cost.slippage), "end")
             eq_curve[n - 1] = equity
+            navs[n - 1] = equity / units if units > 0 else np.nan
 
         eq = pd.Series(eq_curve, index=d["open_time"]).ffill().dropna()
+        nav = pd.Series(navs, index=d["open_time"]).ffill().dropna() if dca else None
         td = pd.DataFrame(trades)
-        metrics = self._metrics(eq, td)
-        return BacktestResult(equity=eq, trades=td, metrics=metrics)
+        metrics = self._metrics(eq, td, nav=nav, total_deposited=total_deposited)
+        return BacktestResult(equity=eq, trades=td, metrics=metrics, nav=nav)
 
-    def _metrics(self, eq: pd.Series, td: pd.DataFrame) -> dict:
-        if len(eq) < 2:
+    def _metrics(self, eq: pd.Series, td: pd.DataFrame,
+                 nav: pd.Series | None = None, total_deposited: float = 0.0) -> dict:
+        """绩效指标。定投模式下收益/夏普/回撤用 nav 曲线（剔除入金），
+        另报 total_deposited / net_profit（账户终值 - 初始资金 - 累计入金）。"""
+        perf = nav if (nav is not None and len(nav) >= 2) else eq
+        if len(perf) < 2:
             return {}
-        years = (eq.index[-1] - eq.index[0]).days / 365.25
-        ann = (eq.iloc[-1] / eq.iloc[0]) ** (1 / max(years, 1e-9)) - 1
-        rets = eq.pct_change().dropna()
+        years = (perf.index[-1] - perf.index[0]).days / 365.25
+        ann = (perf.iloc[-1] / perf.iloc[0]) ** (1 / max(years, 1e-9)) - 1
+        rets = perf.pct_change().dropna()
         sharpe = float(rets.mean() / rets.std() * np.sqrt(self.sizing.bars_per_year)) if rets.std() > 0 else 0.0
-        mdd = float((eq / eq.cummax() - 1).min())
-        out = {"total_return": float(eq.iloc[-1] / eq.iloc[0] - 1),
+        mdd = float((perf / perf.cummax() - 1).min())
+        out = {"total_return": float(perf.iloc[-1] / perf.iloc[0] - 1),
                "annualized": float(ann), "sharpe": sharpe, "max_drawdown": mdd,
                "calmar": float(ann / abs(mdd)) if mdd < 0 else None,
                "trades": int(len(td))}
         if len(td) and (td.pnl <= 0).any():
             out["profit_factor"] = float(td.loc[td.pnl > 0, "pnl"].sum() / abs(td.loc[td.pnl <= 0, "pnl"].sum()))
+        if nav is not None:
+            out["total_deposited"] = float(total_deposited)
+            out["net_profit"] = float(eq.iloc[-1] - eq.iloc[0] - total_deposited)
         return out

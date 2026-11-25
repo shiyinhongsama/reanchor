@@ -35,6 +35,8 @@ export default function BacktestPage() {
     fee_bp: 5,
     slippage_bp: 2,
     initial_equity: 10000,
+    deposit_amount: 0,
+    deposit_every_days: 30,
   });
   const [params, setParams] = useState<Record<string, number | string>>({});
   const [job, setJob] = useState<BacktestJob | null>(null);
@@ -127,6 +129,8 @@ export default function BacktestPage() {
         fee: form.fee_bp / 10000,
         slippage: form.slippage_bp / 10000,
         initial_equity: form.initial_equity,
+        deposit_amount: form.deposit_amount,
+        deposit_every_days: form.deposit_every_days,
       });
       setJob(j);
       stopPoll();
@@ -226,6 +230,18 @@ export default function BacktestPage() {
               <Label className="text-[10px] text-muted-foreground">初始资金</Label>
               <Input type="number" value={form.initial_equity}
                 onChange={(e) => setForm({ ...form, initial_equity: +e.target.value })}
+                className="h-8 text-xs" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">定投金额（0=关）</Label>
+              <Input type="number" value={form.deposit_amount}
+                onChange={(e) => setForm({ ...form, deposit_amount: +e.target.value })}
+                className="h-8 text-xs" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">定投间隔（天）</Label>
+              <Input type="number" value={form.deposit_every_days}
+                onChange={(e) => setForm({ ...form, deposit_every_days: +e.target.value })}
                 className="h-8 text-xs" />
             </div>
             <div>
@@ -440,6 +456,13 @@ export default function BacktestPage() {
             <Metric label="CALMAR" value={currentMetrics.calmar != null ? num(currentMetrics.calmar) : "—"} />
             <Metric label="盈亏比" value={currentMetrics.profit_factor != null ? num(currentMetrics.profit_factor) : "—"} />
             <Metric label="交易笔数" value={String(currentMetrics.trades)} />
+            {currentMetrics.total_deposited != null && (
+              <Metric label="累计入金" value={num(currentMetrics.total_deposited)} />
+            )}
+            {currentMetrics.net_profit != null && (
+              <Metric label="净利润" value={`${currentMetrics.net_profit >= 0 ? "+" : ""}${num(currentMetrics.net_profit)}`}
+                tone={currentMetrics.net_profit >= 0 ? "up" : "down"} />
+            )}
           </div>
         ) : (
           <div className="flex h-32 items-center justify-center border border-dashed border-border text-xs text-muted-foreground">
@@ -450,6 +473,11 @@ export default function BacktestPage() {
           <div className="border border-border bg-panel p-3 text-[10px] leading-relaxed text-muted-foreground">
             <div className="section-label mb-1.5">口径说明</div>
             信号在已收盘 K 线产生，下一根开盘价成交；含手续费与滑点；多品种等权合成组合。与实盘执行器共用同一套 domain 逻辑。
+            {currentMetrics?.total_deposited != null && (
+              <div className="mt-1.5 border-t border-border pt-1.5">
+                定投口径：绩效（年化/夏普/回撤）按份额净值计算，剔除入金影响；资金曲线为账户真实余额（含入金）。
+              </div>
+            )}
           </div>
         )}
       </aside>

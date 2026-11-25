@@ -53,7 +53,9 @@ def expand_sweep(req: SweepRequest) -> list[BacktestRequest]:
                     strategy=req.strategy, symbols=req.symbols, timeframe=req.timeframe,
                     start=req.start, end=req.end, params=params,
                     risk_frac=risk, vol_target=vt, max_leverage=req.max_leverage,
-                    fee=req.fee, slippage=req.slippage, initial_equity=req.initial_equity))
+                    fee=req.fee, slippage=req.slippage, initial_equity=req.initial_equity,
+                    deposit_amount=req.deposit_amount,
+                    deposit_every_days=req.deposit_every_days))
     return combos
 
 
@@ -299,10 +301,13 @@ class BacktestRunner:
                 sizing=SizingConfig(risk_frac=req.risk_frac, vol_target=req.vol_target,
                                     max_leverage=req.max_leverage, bars_per_year=bpy),
                 cost=CostModel(fee=req.fee, slippage=req.slippage),
-                initial_equity=req.initial_equity)
+                initial_equity=req.initial_equity,
+                deposit_amount=req.deposit_amount,
+                deposit_every_days=req.deposit_every_days)
             result = engine.run(bars[symbol])
             per_symbol.append(SymbolMetrics(symbol=symbol, **result.metrics))
-            curves[symbol] = result.equity
+            # 组合净值：定投模式用 nav（剔除入金），否则用账户权益
+            curves[symbol] = result.nav if result.nav is not None else result.equity
             self.results.setdefault(job_id, {})[symbol] = {
                 "trades": result.trades, "equity": result.equity}
         portfolio = None

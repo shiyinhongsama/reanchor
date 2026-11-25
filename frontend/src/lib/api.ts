@@ -76,6 +76,8 @@ export interface BacktestRequest {
   fee: number;
   slippage: number;
   initial_equity: number;
+  deposit_amount?: number;
+  deposit_every_days?: number;
 }
 
 export interface BacktestJob {
@@ -95,6 +97,8 @@ export interface SymbolMetrics {
   calmar?: number | null;
   trades: number;
   profit_factor?: number | null;
+  total_deposited?: number | null;
+  net_profit?: number | null;
 }
 
 export interface BacktestResult {
