@@ -30,7 +30,10 @@
 - **执行器（Executor）模型**：策略是内置模板，执行器持有参数配置独立运行；bar 收盘触发，连续失败自动熔断（只停自己，不拖累其他执行器）
 - **回测 / 实盘语义一致**：同一套信号逻辑、同一套 `ReanchorStop`，回测引擎与实盘 runner 共享 domain 层
 - **Dry-run 优先**：实盘默认全 dry-run，真实下单刻意保留 `NotImplementedError`，需要显式开关
-- **终端风工作台**：暗色主题、等宽数字、lightweight-charts 权益曲线、交易明细逐笔可查；执行器页 5 秒静默轮询 + 信号未读高亮
+- **大盘总览**：恐慌贪婪指数、涨跌家数、按 24h 成交额的热力图，60 秒缓存
+- **新闻情绪**：多源 RSS 定时采集（CoinDesk / Cointelegraph / The Block / Decrypt），CryptoBERT 打标多/空/中，24h 半衰期加权情绪分；两级去重，单源失败不阻塞
+- **研究工具链**：参数扫描、Walk-Forward 走步验证（OOS 结果自动存档）、定投模拟器（份额法 nav 记账）、成本敏感性网格（费率 × 滑点）
+- **终端风工作台**：暗色主题、等宽数字、lightweight-charts 权益曲线、交易明细逐笔可查；信号解释卡展示入场/止损的完整推导
 - **多交易所架构**：交易所适配器抽象层，一期接入 Gate.io（ccxt）
 - **单用户登录**：密码登录 + HMAC 签名令牌（无状态、7 天有效），`/api/v1` 全端点鉴权
 
@@ -41,10 +44,10 @@
 | ![回测工作台](docs/images/backtest.png) | ![执行器管理](docs/images/executors.png) |
 | 三品种等权组合回测：权益曲线、指标面板、逐笔交易明细 | 执行器状态机：启停、下次触发、账面权益与持仓一览 |
 
-| 回测对比 |
-|---|
-| ![回测对比](docs/images/compare.png) |
-| 多次回测存档叠加对比：归一化净值曲线 + 收益/夏普/回撤指标表 |
+| 回测对比 | 大盘总览 |
+|---|---|
+| ![回测对比](docs/images/compare.png) | ![大盘总览](docs/images/market.png) |
+| 多次回测存档叠加对比：归一化净值曲线 + 收益/夏普/回撤指标表 | 恐慌贪婪指数 + 涨跌热力图 + CryptoBERT 新闻情绪条与多源新闻流 |
 
 ## 🚀 快速开始
 
@@ -87,9 +90,13 @@ PYTHONPATH=. python tests/test_engine_smoke.py      # 引擎冒烟 + 研究基�
 PYTHONPATH=. python tests/test_executors.py         # 执行器 CRUD / 状态机
 PYTHONPATH=. python tests/test_live_runner.py       # 实盘调度 / 熔断 / 记账
 PYTHONPATH=. python tests/test_sweep.py             # 参数扫描（网格展开 / 共享 K 线）
-PYTHONPATH=. python tests/test_backtest_persist.py  # 回测存档
-PYTHONPATH=. python tests/test_latest_signal.py     # 最新信号查询
+PYTHONPATH=. python tests/test_walkforward.py       # Walk-Forward 走步验证
+PYTHONPATH=. python tests/test_dca.py               # 定投模拟（份额法 nav）
+PYTHONPATH=. python tests/test_costsens.py          # 成本敏感性网格
+PYTHONPATH=. python tests/test_market.py            # 大盘总览（FNG / 热力图）
+PYTHONPATH=. python tests/test_news.py              # 新闻采集 / 去重 / 情绪聚合
 PYTHONPATH=. python tests/test_auth.py              # 登录令牌 / 中间件
+# …共 17 组，见 tests/ 目录
 ```
 
 引擎结果**锚定研究基线**（BTC 日线，5% 风险 + VT 25%），防止移植漂移
@@ -106,9 +113,13 @@ PYTHONPATH=. python tests/test_auth.py              # 登录令牌 / 中间件
 
 **EMA 回调版 v1**（`ema_pullback_v1`）：回踩 EMA20 收回后顺斜率方向入场，斜率翻转出场，3×ATR 重锚止损。
 
+**EMA 趋势版 v1**（`ema_trend_v1`）：纯趋势跟踪，斜率方向持仓、斜率反转离场，同一套重锚止损。
+
+均线族支持 `ema / sma / wma / dema / tema`（见 [`strategies/ma.py`](backend/app/strategies/ma.py)），回测工作台可一键套用研究验证过的参数模板。
+
 | 参数 | 默认 | 范围 | 说明 |
 |---|---|---|---|
-| `ema_n` | 20 | 5–200 | EMA 周期 |
+| `ema_n` | 20 | 5–200 | 均线周期 |
 | `slope_k` | 8 | 2–50 | 斜率回溯窗口 |
 | `atr_n` | 14 | 5–50 | ATR 周期 |
 | `atr_mult` | 3.0 | 1.0–8.0 | 止损 ATR 倍数 |
@@ -149,10 +160,15 @@ reanchor/
 | `TP_ADMIN_PASSWORD` | `reanchor` | 登录密码（单用户模式，部署务必修改） |
 | `TP_SECRET_KEY` | 开发默认值 | 令牌签名密钥（修改后旧令牌全部失效） |
 | `TP_TOKEN_TTL_HOURS` | `168` | 登录令牌有效期（小时） |
+| `TP_NEWS_PROXY` | 空 | 新闻 RSS / 模型下载代理（如 `http://127.0.0.1:7897`），直连失败时自动回退 |
 
 ## 🗺 Roadmap
 
 - [x] 一期：回测引擎 + 执行器 + 终端风工作台（dry-run 实盘）
+- [x] 研究工具链：参数扫描、Walk-Forward、定投模拟、成本敏感性
+- [x] 大盘总览：FNG 恐慌贪婪 + 成交额热力图
+- [x] 新闻情绪：多源 RSS 采集 + CryptoBERT 打标 + 时间衰减聚合
+- [ ] 新闻情绪接入执行器预警（与 FNG 双指标联动）
 - [ ] 真实下单（Gate.io 合约，显式开关 + 二次确认）
 - [ ] 二期：AI Agent 交易助手（对话式策略分析、监控与调参建议）
 - [ ] 多策略并行与组合层净值

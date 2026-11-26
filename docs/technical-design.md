@@ -284,6 +284,16 @@ erDiagram
         float entry_stop
         float current_stop
     }
+    NEWS {
+        string id PK "url sha1 前16位"
+        string title_hash "跨源去重"
+        string source
+        string title
+        string url
+        string sentiment "bullish/bearish/neutral"
+        float score "±置信度，neutral为0"
+        datetime published_at
+    }
 ```
 
 执行器的权益核算：单用户单交易所账户下，多个执行器共享一个 Gate.io 合约账户，按 `equity_budget` 做**账面隔离**——每个执行器记账自己的权益曲线与持仓，平台保证 Σ(执行器风险敞口) ≤ 账户总权益 × 3x 杠杆硬顶。
@@ -307,6 +317,12 @@ erDiagram
 | GET | `/api/v1/executors/{id}/signals` | 该执行器最近信号流水 |
 | GET | `/api/v1/live/status` | 实盘总状态 |
 | POST | `/api/v1/live/orders` | 手动下单（默认 dry_run） |
+| POST | `/api/v1/backtests/sweep` | 参数扫描（网格 ≤24 组，共享 K 线） |
+| POST | `/api/v1/backtests/walkforward` | Walk-Forward 走步验证（OOS 自动存档） |
+| GET | `/api/v1/market/overview` | 大盘总览（FNG + 涨跌家数 + 热力图，60s 缓存） |
+| GET | `/api/v1/news` | 新闻流（可按小时窗过滤） |
+| GET | `/api/v1/news/sentiment` | 新闻情绪聚合（半衰期 12h 时间衰减加权） |
+| POST | `/api/v1/news/collect` | 手动触发一轮采集 |
 
 ## 7. 关键决策记录
 
@@ -321,6 +337,8 @@ erDiagram
 | 7 | 交易所层：自定义最小接口 + ccxt.async_support 实现，一期只实装 Gate.io | 统一接口由我们定义（防厂商锁定），传输/鉴权/限频交给 ccxt（不重写轮子）；ccxt 的交易所差异被隔离在适配层内 |
 | 8 | K 线周期最小 1min，原生周期直拉、非原生周期适配层内重采样 | 平台能力与策略验证周期解耦；重采样收口在一处，引擎永远只看到目标周期 |
 | 9 | 策略 = 无状态模板，执行器 = 持有参数与状态的运行时实例 | 同一策略多实例参数隔离；回测配置与实盘执行器同一概念，研究到上线无二次翻译 |
+| 10 | 新闻情绪走 RSS + CryptoBERT 分类，而非大模型逐条推理 | RSS 免 key、频率稳定；分类模型本地 CPU 可跑（秒级加载、数十 ms/条），情绪是过滤器/上下文而非信号源，不需要生成式模型的表达力 |
+| 11 | CryptoBERT 缓存命中时 `HF_HUB_OFFLINE=1` 短路 Hub 检查 | transformers 5.x 会逐文件联网校验（含 chat-template），国内网络下每个文件超时重试数分钟；离线短路后秒开，未命中缓存才走代理下载 |
 
 ## 8. 路线图
 
@@ -334,6 +352,14 @@ erDiagram
 - [ ] 实盘通知（信号/熔断推送）
 - [x] 回测结果对比页（backtest_runs 存档表 + 跨会话 DB 回源 + 叠加净值曲线与指标表）
 - [x] 参数扫描（网格笛卡尔积 ≤24 组，K 线共享一次拉取，逐组自动存档进对比页）
+- [x] 信号解释卡（策略 explain 协议 + 流水逐笔推导详情）
+- [x] K 线本地缓存（只存已收盘 K 线，尾部 2 根回拉校验，异常降级直拉）
+- [x] Walk-Forward 走步验证（滚动起点，OOS 拼接净值自动存档对比页）
+- [x] 定投模拟器（份额法 nav 记账，初始资金 + 定期入金）
+- [x] 成本敏感性（费率 × 滑点网格重跑，验证策略对成本假设的稳健性）
+- [x] 大盘总览页（FNG 恐慌贪婪 + 涨跌家数 + 成交额热力图，60s 缓存）
+- [x] 新闻情绪（多源 RSS 定时采集 + 两级去重 + CryptoBERT 打标 + 24h 时间衰减加权聚合）
+- [ ] 新闻情绪接入执行器 ENV 预警（与 FNG 双指标联动）
 
 **二期（AI Agent 助手）**
 - [ ] 只读工具集（结果查询、归因、信号解释）
